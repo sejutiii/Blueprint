@@ -1,0 +1,114 @@
+{
+  "name": "blueprint",
+  "displayName": "BluePrint",
+  "description": "Architecture-aware AI-assisted development with persistent architectural knowledge",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "blueprint.init",
+        "title": "BluePrint: Initialize Project",
+        "icon": "$(blueprint)"
+      },
+      {
+        "command": "blueprint.reviewChange",
+        "title": "BluePrint: Review This Change Architecturally",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "blueprint.preCheck",
+        "title": "BluePrint: Pre-Check Prompt Against Architecture",
+        "icon": "$(shield)"
+      },
+      {
+        "command": "blueprint.viewArch",
+        "title": "BluePrint: View Architecture (ARCH.md)",
+        "icon": "$(file-code)"
+      },
+      {
+        "command": "blueprint.openAdrBrowser",
+        "title": "BluePrint: Open ADR Browser",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "blueprint.viewAuditTrail",
+        "title": "BluePrint: View Decision Audit Trail",
+        "icon": "$(history)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "blueprint-explorer",
+          "title": "BluePrint",
+          "icon": "$(circuit-board)"
+        }
+      ]
+    },
+    "views": {
+      "blueprint-explorer": [
+        {
+          "id": "blueprint.adrBrowser",
+          "name": "Architectural Decisions",
+          "when": "blueprint.initialized"
+        },
+        {
+          "id": "blueprint.auditTrail",
+          "name": "Audit Trail",
+          "when": "blueprint.initialized"
+        }
+      ]
+    },
+    "menus": {
+      "editor/title": [
+        {
+          "command": "blueprint.reviewChange",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "blueprint.reviewChange",
+          "when": "blueprint.initialized"
+        },
+        {
+          "command": "blueprint.preCheck",
+          "when": "blueprint.initialized"
+        },
+        {
+          "command": "blueprint.viewArch",
+          "when": "blueprint.initialized"
+        },
+        {
+          "command": "blueprint.openAdrBrowser",
+          "when": "blueprint.initialized"
+        },
+        {
+          "command": "blueprint.viewAuditTrail",
+          "when": "blueprint.initialized"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "node esbuild.js --production",
+    "build": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "esbuild": "^0.20.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.3.0"
+  }
+}
