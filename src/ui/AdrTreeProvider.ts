@@ -8,6 +8,11 @@ class AdrItem extends vscode.TreeItem {
     this.tooltip = adr.context;
     this.contextValue = "adr";
     this.iconPath = new vscode.ThemeIcon(AdrItem.iconForStatus(adr.status));
+    this.command = {
+      command: "blueprint.openAdr",
+      title: "Open ADR",
+      arguments: [adr],
+    };
   }
 
   private static iconForStatus(status: AdrStatus): string {

@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-{{nonce}}';">
+  <title>BluePrint Setup</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--vscode-font-family);
+      font-size: var(--vscode-font-size);
+      color: var(--vscode-foreground);
+      background: var(--vscode-editor-background);
+      display: flex;
+      justify-content: center;
+      padding: 40px 20px 60px;
+      min-height: 100vh;
+    }
+
+    .container { width: 100%; max-width: 580px; }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 28px;
+      font-size: 18px;
+      font-weight: 600;
+      opacity: 0.9;
+    }
+
+    /* Step dots */
+    .step-indicator {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 24px;
+      font-size: 12px;
+      color: var(--vscode-descriptionForeground);
+    }
+    .step-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--vscode-input-border);
+      transition: background 0.2s;
+    }
+    .step-dot.active { background: var(--vscode-button-background); }
+    .step-dot.done   { background: var(--vscode-testing-iconPassed, #4caf50); }
+
+    /* Card */
+    .card {
+      background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+      border: 1px solid var(--vscode-panel-border, var(--vscode-input-border));
+      border-radius: 6px;
+      padding: 28px;
+    }
+
+    h2 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+
+    .subtitle {
+      color: var(--vscode-descriptionForeground);
+      font-size: 12px;
+      margin-bottom: 24px;
+      line-height: 1.6;
+    }
+
+    .field { margin-bottom: 16px; }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      margin-bottom: 5px;
+    }
+
+    select, input[type="text"], input[type="password"], textarea {
+      width: 100%;
+      background: var(--vscode-input-background);
+      color: var(--vscode-input-foreground);
+      border: 1px solid var(--vscode-input-border);
+      border-radius: 3px;
+      padding: 7px 10px;
+      font-family: inherit;
+      font-size: 13px;
+      outline: none;
+    }
+    select:focus, input:focus, textarea:focus { border-color: var(--vscode-focusBorder); }
+    textarea { resize: vertical; min-height: 100px; line-height: 1.5; }
+
+    .actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    button {
+      padding: 7px 18px;
+      border: none;
+      border-radius: 3px;
+      font-family: inherit;
+      font-size: 13px;
+      cursor: pointer;
+      background: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+    }
+    button:hover    { background: var(--vscode-button-hoverBackground); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    button.secondary {
+      background: var(--vscode-button-secondaryBackground);
+      color: var(--vscode-button-secondaryForeground);
+    }
+    button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
+
+    /* Spinner */
+    .spinner-wrap { text-align: center; padding: 44px 0; }
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid var(--vscode-input-border);
+      border-top-color: var(--vscode-button-background);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+      margin: 0 auto 18px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner-wrap p { color: var(--vscode-descriptionForeground); font-size: 12px; }
+
+    /* Success / done */
+    .success-wrap { text-align: center; padding: 28px 0; }
+    .success-icon {
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      background: var(--vscode-testing-iconPassed, #4caf50);
+      color: white;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+      margin: 0 auto 18px;
+    }
+    .success-wrap p {
+      color: var(--vscode-descriptionForeground);
+      font-size: 12px;
+      margin-bottom: 20px;
+      line-height: 1.6;
+    }
+    .success-wrap .btn-row {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    /* Error */
+    .error-box {
+      background: var(--vscode-inputValidation-errorBackground);
+      border: 1px solid var(--vscode-inputValidation-errorBorder);
+      border-radius: 4px;
+      padding: 12px;
+      margin-bottom: 16px;
+    }
+    .error-box strong { font-size: 12px; display: block; margin-bottom: 6px; }
+    .error-box pre {
+      font-family: var(--vscode-editor-font-family);
+      font-size: 11px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--vscode-errorForeground);
+      max-height: 140px;
+      overflow-y: auto;
+    }
+
+    /* Constraint elicitation */
+    .progress-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .progress-track {
+      flex: 1;
+      height: 4px;
+      background: var(--vscode-input-border);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: var(--vscode-button-background);
+      border-radius: 2px;
+      transition: width 0.3s ease;
+    }
+    .progress-label {
+      font-size: 11px;
+      color: var(--vscode-descriptionForeground);
+      white-space: nowrap;
+    }
+
+    .question-text {
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 12px;
+      line-height: 1.5;
+    }
+
+    .draft-banner {
+      background: var(--vscode-editorInfo-background, rgba(0, 122, 204, 0.1));
+      border: 1px solid var(--vscode-editorInfo-border, rgba(0, 122, 204, 0.4));
+      border-radius: 4px;
+      padding: 8px 12px;
+      font-size: 12px;
+      margin-bottom: 16px;
+      color: var(--vscode-editorInfo-foreground, var(--vscode-foreground));
+    }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <div class="logo"><span>⬡ BluePrint</span></div>
+
+  <div class="step-indicator">
+    <div class="step-dot" id="dot-1"></div>
+    <div class="step-dot" id="dot-2"></div>
+    <div class="step-dot" id="dot-3"></div>
+    <span id="step-label"></span>
+  </div>
+
+  <div class="card">
+
+    <!-- ════════════════════════════════════
+         SCREEN 1 — Provider Config
+    ════════════════════════════════════ -->
+    <div id="screen-provider">
+      <h2>Configure LLM Provider</h2>
+      <p class="subtitle">Choose your provider and enter your API key. It is stored securely in VSCode's secret store — never in your project files.</p>
+
+      <div class="field">
+        <label for="provider-select">Provider</label>
+        <select id="provider-select">
+          <option value="gemini">Google Gemini (free tier available)</option>
+          <option value="groq">Groq (free tier available)</option>
+          <option value="openrouter">OpenRouter (free models available)</option>
+          <option value="anthropic">Anthropic — Claude</option>
+          <option value="openai">OpenAI</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="api-key-input">API Key</label>
+        <input type="password" id="api-key-input" placeholder="Paste your API key here" autocomplete="off" />
+      </div>
+
+      <div class="actions">
+        <button id="btn-provider-next">Next →</button>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════
+         SCREEN 2 — System Description
+    ════════════════════════════════════ -->
+    <div id="screen-description" class="hidden">
+      <h2>Describe Your System</h2>
+      <p class="subtitle">Describe your project in plain English. BluePrint will extract components, data flow, and constraints to generate your initial <code>ARCH.md</code>.</p>
+
+      <div class="field">
+        <label for="system-name">Project Name</label>
+        <input type="text" id="system-name" placeholder="e.g. My E-Commerce Platform" />
+      </div>
+
+      <div class="field">
+        <label for="system-description">System Description</label>
+        <textarea id="system-description" style="min-height:130px" placeholder="e.g. A web app that lets users browse products, add them to a cart, and check out using Stripe. React frontend, Node.js backend, PostgreSQL database..."></textarea>
+      </div>
+
+      <div class="actions">
+        <button class="secondary" id="btn-description-back">← Back</button>
+        <button id="btn-generate">Generate Architecture</button>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════
+         SCREEN — Generating ARCH.md
+    ════════════════════════════════════ -->
+    <div id="screen-arch-loading" class="hidden">
+      <div class="spinner-wrap">
+        <div class="spinner"></div>
+        <p>Analyzing your system description…</p>
+        <p style="margin-top:5px; font-size:11px; opacity:0.7">This may take 10–30 seconds</p>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════
+         SCREEN — ARCH.md Done
+    ════════════════════════════════════ -->
+    <div id="screen-arch-done" class="hidden">
+      <div class="success-wrap">
+        <div class="success-icon">✓</div>
+        <h2>Architecture Generated!</h2>
+        <p id="arch-done-summary"></p>
+        <div class="btn-row">
+          <button class="secondary" id="btn-skip-constraints">Done — View ARCH.md</button>
+          <button id="btn-start-constraints">Surface Constraints →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════
+         SCREEN 3 — Constraint Elicitation
+    ════════════════════════════════════ -->
+    <div id="screen-constraints" class="hidden">
+      <h2>Surface Constraints</h2>
+      <p class="subtitle">Answer a few questions. BluePrint will turn concrete decisions into Architectural Decision Records you can review before saving.</p>
+
+      <div class="progress-row">
+        <div class="progress-track">
+          <div class="progress-fill" id="constraint-progress-fill" style="width:0%"></div>
+        </div>
+        <span class="progress-label" id="constraint-progress-label">Question 1 of 5</span>
+      </div>
+
+      <!-- Sub-state: question -->
+      <div id="cq-question">
+        <p class="question-text" id="cq-question-text"></p>
+        <div class="field">
+          <textarea id="cq-answer" style="min-height:90px"></textarea>
+        </div>
+        <div class="actions">
+          <button class="secondary" id="btn-skip-question">Skip</button>
+          <button id="btn-submit-answer">Analyze →</button>
+        </div>
+      </div>
+
+      <!-- Sub-state: analyzing -->
+      <div id="cq-analyzing" class="hidden">
+        <div class="spinner-wrap" style="padding:28px 0">
+          <div class="spinner"></div>
+          <p>Checking for architectural constraints…</p>
+        </div>
+      </div>
+
+      <!-- Sub-state: draft review -->
+      <div id="cq-draft" class="hidden">
+        <div class="draft-banner">Constraint detected — review the draft ADR before saving</div>
+        <div class="field">
+          <label for="draft-title">Title</label>
+          <input type="text" id="draft-title" />
+        </div>
+        <div class="field">
+          <label for="draft-context">Context</label>
+          <textarea id="draft-context" style="min-height:70px"></textarea>
+        </div>
+        <div class="field">
+          <label for="draft-decision">Decision</label>
+          <textarea id="draft-decision" style="min-height:60px"></textarea>
+        </div>
+        <div class="field">
+          <label for="draft-consequences">Consequences</label>
+          <textarea id="draft-consequences" style="min-height:60px"></textarea>
+        </div>
+        <div class="actions">
+          <button class="secondary" id="btn-discard-draft">Discard</button>
+          <button id="btn-save-draft">Save ADR</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════
+         SCREEN — All Done
+    ════════════════════════════════════ -->
+    <div id="screen-done" class="hidden">
+      <div class="success-wrap">
+        <div class="success-icon">✓</div>
+        <h2>Project Initialized!</h2>
+        <p id="done-summary"></p>
+        <div class="btn-row">
+          <button id="btn-view-arch-done">Open ARCH.md →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════
+         SCREEN — Error
+    ════════════════════════════════════ -->
+    <div id="screen-error" class="hidden">
+      <div class="error-box">
+        <strong>Something went wrong</strong>
+        <pre id="error-message"></pre>
+      </div>
+      <div class="actions">
+        <button id="btn-retry">Try Again</button>
+      </div>
+    </div>
+
+  </div><!-- /card -->
+</div><!-- /container -->
+
+<script nonce="{{nonce}}">
+  const vscode = acquireVsCodeApi();
+
+  // ── Screen management ──────────────────────────────
+  const allScreens = [
+    'screen-provider', 'screen-description', 'screen-arch-loading',
+    'screen-arch-done', 'screen-constraints', 'screen-done', 'screen-error',
+  ];
+
+  function showScreen(id) {
+    allScreens.forEach(s => document.getElementById(s).classList.add('hidden'));
+    document.getElementById(id).classList.remove('hidden');
+  }
+
+  function showCqState(id) {
+    ['cq-question', 'cq-analyzing', 'cq-draft'].forEach(s =>
+      document.getElementById(s).classList.add('hidden')
+    );
+    document.getElementById(id).classList.remove('hidden');
+  }
+
+  // ── Step indicator ─────────────────────────────────
+  function setDots(step) {
+    // step: 1, 2, 3, or 'done'
+    const dots = [
+      document.getElementById('dot-1'),
+      document.getElementById('dot-2'),
+      document.getElementById('dot-3'),
+    ];
+    const labels = ['Step 1 of 3', 'Step 2 of 3', 'Step 3 of 3', 'Complete'];
+    const stepIdx = step === 'done' ? 3 : step - 1;
+
+    dots.forEach((d, i) => {
+      d.className = 'step-dot';
+      if (i < stepIdx)       d.classList.add('done');
+      else if (i === stepIdx && step !== 'done') d.classList.add('active');
+    });
+    document.getElementById('step-label').textContent = labels[stepIdx];
+  }
+
+  // ── Initial state ──────────────────────────────────
+  setDots(1);
+  showScreen('screen-provider');
+
+  // ── Screen 1: Provider ─────────────────────────────
+  document.getElementById('btn-provider-next').addEventListener('click', () => {
+    const provider = document.getElementById('provider-select').value;
+    const apiKey   = document.getElementById('api-key-input').value.trim();
+    if (!apiKey) { document.getElementById('api-key-input').focus(); return; }
+    vscode.postMessage({ command: 'saveProvider', provider, apiKey });
+    showScreen('screen-description');
+    setDots(2);
+  });
+
+  // ── Screen 2: Description ──────────────────────────
+  document.getElementById('btn-description-back').addEventListener('click', () => {
+    showScreen('screen-provider');
+    setDots(1);
+  });
+
+  document.getElementById('btn-generate').addEventListener('click', () => {
+    const systemName        = document.getElementById('system-name').value.trim() || 'System';
+    const systemDescription = document.getElementById('system-description').value.trim();
+    if (!systemDescription) { document.getElementById('system-description').focus(); return; }
+    vscode.postMessage({ command: 'generate', systemName, systemDescription });
+  });
+
+  // ── Arch done choices ──────────────────────────────
+  document.getElementById('btn-skip-constraints').addEventListener('click', () => {
+    vscode.postMessage({ command: 'viewArch' });
+  });
+
+  document.getElementById('btn-start-constraints').addEventListener('click', () => {
+    vscode.postMessage({ command: 'startConstraints' });
+  });
+
+  // ── Constraint: submit answer ──────────────────────
+  document.getElementById('btn-submit-answer').addEventListener('click', () => {
+    const answer = document.getElementById('cq-answer').value.trim();
+    vscode.postMessage({ command: 'submitAnswer', answer });
+  });
+
+  document.getElementById('btn-skip-question').addEventListener('click', () => {
+    vscode.postMessage({ command: 'skipQuestion' });
+  });
+
+  // ── Constraint: draft review ───────────────────────
+  document.getElementById('btn-save-draft').addEventListener('click', () => {
+    vscode.postMessage({
+      command: 'saveDraft',
+      draft: {
+        title:        document.getElementById('draft-title').value,
+        context:      document.getElementById('draft-context').value,
+        decision:     document.getElementById('draft-decision').value,
+        consequences: document.getElementById('draft-consequences').value,
+      },
+    });
+  });
+
+  document.getElementById('btn-discard-draft').addEventListener('click', () => {
+    vscode.postMessage({ command: 'discardDraft' });
+  });
+
+  // ── Done ───────────────────────────────────────────
+  document.getElementById('btn-view-arch-done').addEventListener('click', () => {
+    vscode.postMessage({ command: 'viewArch' });
+  });
+
+  document.getElementById('btn-retry').addEventListener('click', () => {
+    showScreen('screen-description');
+    setDots(2);
+  });
+
+  // ── Progress bar helper ────────────────────────────
+  function setProgress(index, total) {
+    const pct = total > 0 ? Math.round((index / total) * 100) : 0;
+    document.getElementById('constraint-progress-fill').style.width = pct + '%';
+    document.getElementById('constraint-progress-label').textContent =
+      `Question ${index + 1} of ${total}`;
+  }
+
+  // ── Messages from extension host ───────────────────
+  window.addEventListener('message', (event) => {
+    const msg = event.data;
+
+    switch (msg.command) {
+
+      // Initialise: skip provider step if already configured
+      case 'init':
+        if (msg.hasProvider) {
+          if (msg.provider) document.getElementById('provider-select').value = msg.provider;
+          showScreen('screen-description');
+          setDots(2);
+        } else {
+          showScreen('screen-provider');
+          setDots(1);
+        }
+        break;
+
+      // Arch generation started
+      case 'generating':
+        showScreen('screen-arch-loading');
+        break;
+
+      // Arch generation succeeded
+      case 'success': {
+        const bp = msg.blueprint;
+        const n  = bp.components ? bp.components.length : 0;
+        document.getElementById('arch-done-summary').textContent =
+          `Found ${n} component${n !== 1 ? 's' : ''}. docs/ARCH.md and .blueprint/arch.json have been written to your workspace.`;
+        showScreen('screen-arch-done');
+        break;
+      }
+
+      // Begin constraint elicitation
+      case 'showQuestion':
+        showScreen('screen-constraints');
+        setDots(3);
+        setProgress(msg.index, msg.total);
+        document.getElementById('cq-question-text').textContent = msg.question;
+        document.getElementById('cq-answer').placeholder = msg.placeholder || '';
+        document.getElementById('cq-answer').value = '';
+        showCqState('cq-question');
+        document.getElementById('cq-answer').focus();
+        break;
+
+      // Analyzing spinner
+      case 'analyzing':
+        showCqState('cq-analyzing');
+        break;
+
+      // Draft ADR to review
+      case 'showDraft': {
+        const d = msg.draft;
+        document.getElementById('draft-title').value        = d.title        || '';
+        document.getElementById('draft-context').value      = d.context      || '';
+        document.getElementById('draft-decision').value     = d.decision     || '';
+        document.getElementById('draft-consequences').value = d.consequences || '';
+        showCqState('cq-draft');
+        setProgress(msg.index, msg.total);
+        break;
+      }
+
+      // All questions answered
+      case 'elicitationComplete': {
+        const saved = msg.totalSaved;
+        document.getElementById('done-summary').textContent =
+          saved > 0
+            ? `${saved} Architectural Decision Record${saved !== 1 ? 's' : ''} saved to docs/adr/. Your project is fully initialized.`
+            : 'No ADRs were added during constraint elicitation. You can add them later via the ADR Browser.';
+        showScreen('screen-done');
+        setDots('done');
+        break;
+      }
+
+      // Error
+      case 'error':
+        document.getElementById('error-message').textContent = msg.message;
+        showScreen('screen-error');
+        break;
+    }
+  });
+</script>
+</body>
+</html>

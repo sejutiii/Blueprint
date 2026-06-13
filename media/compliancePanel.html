@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-{{nonce}}';">
+  <title>BluePrint: Compliance Review</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--vscode-font-family);
+      font-size: var(--vscode-font-size);
+      color: var(--vscode-foreground);
+      background: var(--vscode-editor-background);
+      padding: 28px 24px 60px;
+    }
+    h2 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+    h3 { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+    .subtitle { color: var(--vscode-descriptionForeground); font-size: 12px; line-height: 1.6; margin-bottom: 20px; }
+
+    .spinner-wrap { text-align: center; padding: 60px 0; }
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid var(--vscode-input-border);
+      border-top-color: var(--vscode-button-background);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+      margin: 0 auto 18px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner-wrap p { color: var(--vscode-descriptionForeground); font-size: 12px; }
+
+    .diff-summary {
+      background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+      border: 1px solid var(--vscode-panel-border, var(--vscode-input-border));
+      border-radius: 5px;
+      padding: 10px 14px;
+      margin-bottom: 18px;
+      font-size: 12px;
+    }
+    .diff-summary summary { cursor: pointer; font-weight: 500; color: var(--vscode-descriptionForeground); user-select: none; }
+    .diff-summary-content { margin-top: 10px; }
+    .diff-group { margin-bottom: 8px; }
+    .diff-group-label { font-weight: 600; font-size: 11px; margin-bottom: 3px; opacity: 0.65; }
+    .diff-group ul { list-style: none; padding-left: 8px; }
+    .diff-group li { font-family: var(--vscode-editor-font-family); font-size: 11px; padding: 1px 0; opacity: 0.85; }
+
+    .clean-wrap { text-align: center; padding: 32px 0 20px; }
+    .clean-icon {
+      width: 48px; height: 48px; border-radius: 50%;
+      background: var(--vscode-testing-iconPassed, #4caf50); color: white;
+      display: flex; align-items: center; justify-content: center; font-size: 22px;
+      margin: 0 auto 14px;
+    }
+    .clean-wrap p { color: var(--vscode-descriptionForeground); font-size: 12px; margin-top: 6px; }
+
+    .violations-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+    .violations-count {
+      background: var(--vscode-inputValidation-errorBackground);
+      border: 1px solid var(--vscode-inputValidation-errorBorder);
+      border-radius: 12px; padding: 2px 10px; font-size: 11px; font-weight: 600;
+    }
+
+    .violation-card {
+      border-radius: 5px; border-left: 3px solid;
+      padding: 12px 14px; margin-bottom: 10px;
+      background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+      border-top: 1px solid var(--vscode-panel-border, var(--vscode-input-border));
+      border-right: 1px solid var(--vscode-panel-border, var(--vscode-input-border));
+      border-bottom: 1px solid var(--vscode-panel-border, var(--vscode-input-border));
+    }
+    .violation-card.high   { border-left-color: var(--vscode-inputValidation-errorBorder, #f44336); }
+    .violation-card.medium { border-left-color: #e6a817; }
+    .violation-card.low    { border-left-color: var(--vscode-editorInfo-foreground, #2196f3); }
+
+    .violation-header { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+    .severity-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 3px; letter-spacing: 0.5px; }
+    .badge-high   { background: rgba(244,67,54,0.15);  color: #f44336; }
+    .badge-medium { background: rgba(230,168,23,0.15); color: #e6a817; }
+    .badge-low    { background: rgba(33,150,243,0.15); color: var(--vscode-editorInfo-foreground, #2196f3); }
+    .constraint-ref { font-size: 11px; opacity: 0.6; font-family: var(--vscode-editor-font-family); }
+    .violation-description { font-size: 12px; line-height: 1.5; margin-bottom: 5px; }
+    .violation-location { font-family: var(--vscode-editor-font-family); font-size: 11px; opacity: 0.55; }
+
+    .resolution-section {
+      margin-top: 22px; padding: 16px 18px;
+      background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+      border: 1px solid var(--vscode-panel-border, var(--vscode-input-border));
+      border-radius: 5px;
+    }
+    .radio-group { margin-bottom: 12px; }
+    .radio-group label {
+      display: flex; align-items: flex-start; gap: 8px;
+      padding: 8px 10px; border-radius: 4px; cursor: pointer;
+      font-size: 12px; margin-bottom: 6px;
+      border: 1px solid var(--vscode-input-border);
+    }
+    .radio-group label:hover { background: var(--vscode-list-hoverBackground); }
+    .radio-group input[type="radio"] { margin-top: 2px; accent-color: var(--vscode-button-background); flex-shrink: 0; }
+    .option-desc { font-size: 11px; color: var(--vscode-descriptionForeground); display: block; margin-top: 2px; }
+
+    textarea {
+      width: 100%; background: var(--vscode-input-background); color: var(--vscode-input-foreground);
+      border: 1px solid var(--vscode-input-border); border-radius: 3px;
+      padding: 7px 10px; font-family: inherit; font-size: 12px;
+      resize: vertical; min-height: 72px; outline: none; margin-bottom: 12px; line-height: 1.5;
+    }
+    textarea:focus { border-color: var(--vscode-focusBorder); }
+
+    button {
+      padding: 7px 18px; border: none; border-radius: 3px;
+      font-family: inherit; font-size: 13px; cursor: pointer;
+      background: var(--vscode-button-background); color: var(--vscode-button-foreground);
+    }
+    button:hover    { background: var(--vscode-button-hoverBackground); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .info-wrap { text-align: center; padding: 48px 0; }
+    .info-icon { font-size: 32px; margin-bottom: 14px; opacity: 0.45; }
+    .info-wrap p { color: var(--vscode-descriptionForeground); font-size: 12px; line-height: 1.7; }
+
+    .saved-wrap { text-align: center; padding: 48px 0; }
+    .saved-icon {
+      width: 44px; height: 44px; border-radius: 50%;
+      background: var(--vscode-testing-iconPassed, #4caf50); color: white;
+      display: flex; align-items: center; justify-content: center; font-size: 20px;
+      margin: 0 auto 14px;
+    }
+    .saved-wrap p { color: var(--vscode-descriptionForeground); font-size: 12px; margin-top: 6px; }
+
+    .error-box {
+      background: var(--vscode-inputValidation-errorBackground);
+      border: 1px solid var(--vscode-inputValidation-errorBorder);
+      border-radius: 4px; padding: 14px;
+    }
+    .error-box strong { font-size: 12px; display: block; margin-bottom: 8px; }
+    .error-box pre {
+      font-family: var(--vscode-editor-font-family); font-size: 11px;
+      white-space: pre-wrap; word-break: break-word;
+      color: var(--vscode-errorForeground); max-height: 160px; overflow-y: auto;
+    }
+
+    .ext-badge {
+      font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 3px;
+      letter-spacing: 0.5px;
+      background: rgba(100,180,255,0.15); color: var(--vscode-editorInfo-foreground, #2196f3);
+    }
+    .ext-card {
+      border-radius: 5px; border-left: 3px solid var(--vscode-editorInfo-foreground, #2196f3);
+      padding: 14px 16px; margin: 14px 0 18px;
+      background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+      border-top: 1px solid var(--vscode-panel-border, var(--vscode-input-border));
+      border-right: 1px solid var(--vscode-panel-border, var(--vscode-input-border));
+      border-bottom: 1px solid var(--vscode-panel-border, var(--vscode-input-border));
+    }
+    .ext-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .ext-name { font-size: 13px; font-weight: 600; }
+    .ext-detail-row { display: flex; gap: 10px; font-size: 12px; margin-bottom: 6px; line-height: 1.5; }
+    .ext-detail-label { font-weight: 600; min-width: 100px; opacity: 0.65; flex-shrink: 0; }
+    .ext-rationale-row { display: flex; gap: 10px; font-size: 11px; margin-top: 8px; opacity: 0.75; line-height: 1.5; }
+
+    .btn-row { display: flex; gap: 10px; }
+    .btn-secondary {
+      padding: 7px 18px; border: 1px solid var(--vscode-button-border, var(--vscode-input-border));
+      border-radius: 3px; font-family: inherit; font-size: 13px; cursor: pointer;
+      background: transparent; color: var(--vscode-foreground);
+    }
+    .btn-secondary:hover { background: var(--vscode-list-hoverBackground); }
+    .btn-secondary:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <!-- Checking (default) -->
+  <div id="screen-checking">
+    <div class="spinner-wrap">
+      <div class="spinner"></div>
+      <p>Running compliance check…</p>
+      <p style="margin-top:5px;font-size:11px;opacity:0.6">Comparing changes against architecture and ADRs</p>
+    </div>
+  </div>
+
+  <!-- No diff -->
+  <div id="screen-no-diff" class="hidden">
+    <div class="info-wrap">
+      <div class="info-icon">⚡</div>
+      <h2 style="margin-bottom:8px">No uncommitted changes</h2>
+      <p>Make some code changes, then click the<br><strong>Review this change architecturally</strong> button.</p>
+    </div>
+  </div>
+
+  <!-- Clean -->
+  <div id="screen-clean" class="hidden">
+    <div class="clean-wrap">
+      <div class="clean-icon">✓</div>
+      <h2>No violations detected</h2>
+      <p>Changes are consistent with your architecture and ADRs.</p>
+    </div>
+    <div id="diff-summary-clean"></div>
+  </div>
+
+  <!-- Violations -->
+  <div id="screen-violations" class="hidden">
+    <div class="violations-header">
+      <h2>Compliance Review</h2>
+      <span class="violations-count" id="violations-count"></span>
+    </div>
+    <p class="subtitle">These changes may violate existing architectural constraints. Record how you will handle them.</p>
+    <div id="diff-summary-violations"></div>
+    <div id="violation-list"></div>
+
+    <div class="resolution-section">
+      <h3>How will you handle this?</h3>
+      <div class="radio-group">
+        <label>
+          <input type="radio" name="resolution" value="update-arch">
+          <span>
+            Update Architecture
+            <span class="option-desc">The code is correct — update ARCH.md to reflect this approved direction change.</span>
+          </span>
+        </label>
+        <label>
+          <input type="radio" name="resolution" value="modify-code">
+          <span>
+            Modify Code
+            <span class="option-desc">The constraint is correct — the generated code should be revised to conform.</span>
+          </span>
+        </label>
+      </div>
+      <textarea id="reasoning-input" placeholder="Explain your reasoning (required)…"></textarea>
+      <button id="btn-save-decision">Save Decision as ADR</button>
+    </div>
+  </div>
+
+  <!-- Extension Detected -->
+  <div id="screen-extension" class="hidden">
+    <h2 style="margin-bottom:6px">Architectural Extension Detected</h2>
+    <p class="subtitle">Your changes introduce a structural element not present in ARCH.md. Registering it keeps your architecture documentation accurate.</p>
+
+    <div id="diff-summary-extension"></div>
+
+    <div class="ext-card">
+      <div class="ext-card-header">
+        <span class="ext-badge">NEW COMPONENT</span>
+        <span id="ext-name" class="ext-name"></span>
+      </div>
+      <div class="ext-detail-row">
+        <span class="ext-detail-label">Responsibility</span>
+        <span id="ext-responsibility"></span>
+      </div>
+      <div class="ext-detail-row hidden" id="ext-tech-row">
+        <span class="ext-detail-label">Technology</span>
+        <span id="ext-technology"></span>
+      </div>
+      <div class="ext-rationale-row">
+        <span class="ext-detail-label">Why detected</span>
+        <span id="ext-rationale"></span>
+      </div>
+    </div>
+
+    <div class="resolution-section">
+      <h3>Register this as a new component?</h3>
+      <p class="subtitle" style="margin-bottom:12px">Confirming will add it to ARCH.md and create an ADR. Dismissing records nothing.</p>
+      <textarea id="ext-reasoning-input" placeholder="Why is this a new component? Additional context for the ADR (optional)…"></textarea>
+      <div class="btn-row">
+        <button id="btn-register-extension">Register as New Component</button>
+        <button class="btn-secondary" id="btn-dismiss-extension">Dismiss</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Saved -->
+  <div id="screen-saved" class="hidden">
+    <div class="saved-wrap">
+      <div class="saved-icon">✓</div>
+      <h2>Decision Recorded</h2>
+      <p id="saved-message"></p>
+    </div>
+  </div>
+
+  <!-- Error -->
+  <div id="screen-error" class="hidden">
+    <div class="error-box">
+      <strong>Compliance check failed</strong>
+      <pre id="error-message"></pre>
+    </div>
+  </div>
+
+<script nonce="{{nonce}}">
+  const vscode = acquireVsCodeApi();
+  let currentViolations = [];
+  let currentExtension  = null;
+
+  const allScreens = [
+    'screen-checking','screen-no-diff','screen-clean',
+    'screen-violations','screen-extension','screen-saved','screen-error'
+  ];
+  function showScreen(id) {
+    allScreens.forEach(s => document.getElementById(s).classList.add('hidden'));
+    document.getElementById(id).classList.remove('hidden');
+  }
+
+  function esc(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function buildDiffHtml(diff) {
+    const groups = [
+      { label: 'NEW FILES',        items: diff.newFiles },
+      { label: 'NEW DEPENDENCIES', items: diff.newDependencies },
+      { label: 'NEW IMPORTS',      items: diff.newImports },
+      { label: 'NEW SIGNATURES',   items: diff.newSignatures },
+    ].filter(g => g.items && g.items.length);
+    if (!groups.length) return '';
+    const total = groups.reduce((n, g) => n + g.items.length, 0);
+    const rows = groups.map(g =>
+      `<div class="diff-group">
+        <div class="diff-group-label">${g.label}</div>
+        <ul>${g.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>
+      </div>`
+    ).join('');
+    return `<details class="diff-summary">
+      <summary>What was checked (${total} structural change${total !== 1 ? 's' : ''})</summary>
+      <div class="diff-summary-content">${rows}</div>
+    </details>`;
+  }
+
+  function buildViolationHtml(v) {
+    const sev = (v.severity || 'medium').toLowerCase();
+    const badge = sev === 'high' ? 'badge-high' : sev === 'low' ? 'badge-low' : 'badge-medium';
+    return `<div class="violation-card ${sev}">
+      <div class="violation-header">
+        <span class="severity-badge ${badge}">${sev.toUpperCase()}</span>
+        <span class="constraint-ref">${esc(v.constraintId || '')}</span>
+      </div>
+      <p class="violation-description">${esc(v.description || '')}</p>
+      ${v.affectedCodeLocation ? `<p class="violation-location">${esc(v.affectedCodeLocation)}</p>` : ''}
+    </div>`;
+  }
+
+  document.getElementById('btn-save-decision').addEventListener('click', () => {
+    const resolution = document.querySelector('input[name="resolution"]:checked')?.value;
+    const reasoning  = document.getElementById('reasoning-input').value.trim();
+    if (!resolution) { alert('Please choose how you will handle this.'); return; }
+    if (!reasoning)  { document.getElementById('reasoning-input').focus(); return; }
+    document.getElementById('btn-save-decision').disabled = true;
+    vscode.postMessage({ command: 'saveDecision', resolution, reasoning, violations: currentViolations });
+  });
+
+  document.getElementById('btn-register-extension').addEventListener('click', () => {
+    if (!currentExtension) { return; }
+    const reasoning = document.getElementById('ext-reasoning-input').value.trim();
+    document.getElementById('btn-register-extension').disabled = true;
+    document.getElementById('btn-dismiss-extension').disabled  = true;
+    vscode.postMessage({ command: 'confirmExtension', extension: currentExtension, reasoning });
+  });
+
+  document.getElementById('btn-dismiss-extension').addEventListener('click', () => {
+    showScreen('screen-clean');
+  });
+
+  window.addEventListener('message', ({ data: msg }) => {
+    switch (msg.command) {
+      case 'noDiff':
+        showScreen('screen-no-diff');
+        break;
+
+      case 'result': {
+        const { result, diffSummary } = msg;
+        const diffHtml = diffSummary ? buildDiffHtml(diffSummary) : '';
+        if (result.violation && result.violations?.length) {
+          currentViolations = result.violations;
+          document.getElementById('violations-count').textContent =
+            result.violations.length + ' violation' + (result.violations.length !== 1 ? 's' : '');
+          document.getElementById('diff-summary-violations').innerHTML = diffHtml;
+          document.getElementById('violation-list').innerHTML = result.violations.map(buildViolationHtml).join('');
+          showScreen('screen-violations');
+        } else if (result.extensionDetected && result.extension) {
+          currentExtension = result.extension;
+          document.getElementById('ext-name').textContent           = result.extension.name;
+          document.getElementById('ext-responsibility').textContent = result.extension.responsibility;
+          document.getElementById('ext-rationale').textContent      = result.extension.rationale;
+          if (result.extension.technology) {
+            document.getElementById('ext-technology').textContent = result.extension.technology;
+            document.getElementById('ext-tech-row').classList.remove('hidden');
+          } else {
+            document.getElementById('ext-tech-row').classList.add('hidden');
+          }
+          document.getElementById('diff-summary-extension').innerHTML = diffHtml;
+          showScreen('screen-extension');
+        } else {
+          document.getElementById('diff-summary-clean').innerHTML = diffHtml;
+          showScreen('screen-clean');
+        }
+        break;
+      }
+
+      case 'saved':
+        document.getElementById('saved-message').textContent = `ADR-${msg.adrId} saved to docs/adr/.`;
+        showScreen('screen-saved');
+        break;
+
+      case 'extensionSaved':
+        document.getElementById('saved-message').textContent =
+          `ADR-${msg.adrId} created and ARCH.md updated with new component.`;
+        showScreen('screen-saved');
+        break;
+
+      case 'error':
+        document.getElementById('error-message').textContent = msg.message;
+        showScreen('screen-error');
+        break;
+    }
+  });
+</script>
+</body>
+</html>

@@ -44,11 +44,18 @@ export interface ViolationDetail {
   affectedCodeLocation: string;
 }
 
+export interface ExtensionDetail {
+  name: string;
+  responsibility: string;
+  technology?: string;
+  rationale: string;
+}
+
 export interface ComplianceResult {
   violation: boolean;
   violations: ViolationDetail[];
   extensionDetected?: boolean;
-  extensionDescription?: string;
+  extension?: ExtensionDetail;
   adrsUsed: string[];   // ADR IDs used as context
 }
 

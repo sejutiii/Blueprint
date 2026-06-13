@@ -17,6 +17,11 @@
         "icon": "$(blueprint)"
       },
       {
+        "command": "blueprint.openHub",
+        "title": "BluePrint: Open Hub",
+        "icon": "$(circuit-board)"
+      },
+      {
         "command": "blueprint.reviewChange",
         "title": "BluePrint: Review This Change Architecturally",
         "icon": "$(eye)"
@@ -68,11 +73,14 @@
     "menus": {
       "editor/title": [
         {
-          "command": "blueprint.reviewChange",
+          "command": "blueprint.openHub",
           "group": "navigation"
         }
       ],
       "commandPalette": [
+        {
+          "command": "blueprint.openHub"
+        },
         {
           "command": "blueprint.reviewChange",
           "when": "blueprint.initialized"

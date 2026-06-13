@@ -1,0 +1,725 @@
+BLUEPRINT — IMPLEMENTATION DETAILS
+====================================
+VSCode Extension for Architecture-Aware AI-Assisted Development
+Version 0.1.0
+
+This document covers every component built, the files involved, the data
+flow, and the key implementation decisions. Intended as a technical reference
+for testing, debugging, and future development.
+
+================================================================================
+COMPONENT 1 — EXTENSION SCAFFOLD & CORE INFRASTRUCTURE
+================================================================================
+
+PURPOSE
+  The VSCode extension shell. Defines activation, command registration,
+  sidebar views, and the build pipeline. All other components hang off this.
+
+FILES
+  package.json              Extension manifest
+  src/extension.ts          Entry point: activate() / deactivate()
+  src/types.ts              All shared TypeScript interfaces
+  src/ui/BlueprintPanel.ts  Singleton webview panel factory
+  src/ui/StatusBarManager.ts  Status bar item (bottom-left)
+  esbuild.js                Bundler config
+  tsconfig.json             TypeScript compiler config
+  .vscode/launch.json       F5 debug config (extensionHost, pre-task: build)
+
+ACTIVATION
+  activationEvent: "onStartupFinished"
+  — activates on every VSCode startup regardless of workspace contents.
+  — changed from "workspaceContains:**/.blueprint/arch.json" because that
+    event requires the file to already exist, so the extension never ran
+    on fresh projects.
+
+COMMANDS REGISTERED (package.json contributes.commands)
+  blueprint.init            Initialize project (setup wizard)
+  blueprint.reviewChange    Run compliance check on current diff
+  blueprint.preCheck        Pre-check a prompt against architecture
+  blueprint.viewArch        Open ARCH.md in markdown preview
+  blueprint.openAdrBrowser  Focus the sidebar ADR browser
+  blueprint.viewAuditTrail  Open the audit trail webview
+  blueprint.openAdr         Internal — opens an ADR .md file (not in palette)
+
+SIDEBAR VIEWS (package.json contributes.views)
+  Container id: blueprint-explorer  (activity bar icon: $(circuit-board))
+  Views:
+    blueprint.adrBrowser   "Architectural Decisions"  when: blueprint.initialized
+    blueprint.auditTrail   "Audit Trail"               when: blueprint.initialized
+
+CONTEXT KEY
+  blueprint.initialized — set via setContext when .blueprint/arch.json exists.
+  Controls sidebar view visibility and command palette filtering.
+
+WEBVIEW PANEL TYPES (BlueprintPanel.ts PanelType)
+  "setup"          BluePrint: Setup
+  "postGeneration" BluePrint: Compliance Review
+  "archViewer"     BluePrint: Architecture
+  "auditTrail"     BluePrint: Audit Trail
+  "preCheck"       BluePrint: Pre-Check
+
+  BlueprintPanel is a singleton per type — re-opening reveals existing panel.
+  loadMedia(filename, vars) reads from media/, substitutes {{key}} tokens.
+  postMessage() and setMessageHandler() manage two-way communication.
+  CSP: script-src uses nonce (32-char alphanumeric); style-src unsafe-inline.
+
+STATUS BAR
+  Alignment: Left, priority: 0
+  States: setIdle / setChecking / setViolationFound / setOk / setUninitialized
+  setOk() auto-reverts to idle after 5 seconds.
+  setViolationFound() changes command to blueprint.reviewChange and sets
+    warningBackground theme color.
+
+BUNDLER
+  esbuild.js bundles src/extension.ts → dist/extension.js
+  Platform: node, format: cjs, external: ["vscode"]
+  Source maps enabled. --production flag enables minification.
+
+SHARED TYPE DEFINITIONS (src/types.ts)
+  ADR              id, title, status, context, decision, consequences,
+                   timestamp (ISO 8601), tags?, embedding?
+  AdrStatus        "proposed" | "accepted" | "deprecated" | "superseded"
+  ArchComponent    name, responsibility, technology?
+  ArchBlueprint    systemOverview, components[], dataFlow, constraints[],
+                   openQuestions[], lastUpdated
+  DiffSummary      newImports[], newSignatures[], newFiles[],
+                   newDependencies[], rawDiff
+  ViolationDetail  constraintId, description, severity, affectedCodeLocation
+  ExtensionDetail  name, responsibility, technology?, rationale
+  ComplianceResult violation, violations[], extensionDetected?,
+                   extension?, adrsUsed[]
+  AuditEntry       timestamp, eventType, summary, adrId?, complianceResult?
+  BlueprintState   initialized, archBlueprint, adrs[], auditTrail[]
+
+================================================================================
+COMPONENT 2 — LLM CLIENT
+================================================================================
+
+PURPOSE
+  A single abstraction over 5 LLM providers. All agents call
+  llm.complete(systemPrompt, userMessage) — provider routing is invisible
+  to the caller. API credentials are stored in VSCode SecretStorage,
+  never in files.
+
+FILES
+  src/llm/LLMClient.ts
+
+PROVIDERS SUPPORTED
+  gemini      Google Gemini      gemini-2.0-flash
+  groq        Groq               llama-3.3-70b-versatile
+  openrouter  OpenRouter         google/gemini-2.0-flash-exp:free
+  anthropic   Anthropic (Claude) claude-sonnet-4-6
+  openai      OpenAI             gpt-4o-mini
+
+API ROUTING
+  Gemini:    POST generativelanguage.googleapis.com/v1beta/models/
+             gemini-2.0-flash:generateContent?key=<apiKey>
+             Body: { systemInstruction: {parts:[{text}]}, contents:[{parts:[{text}]}] }
+
+  Anthropic: POST api.anthropic.com/v1/messages
+             Headers: x-api-key, anthropic-version: 2023-06-01
+             Body: { model, max_tokens:4096, system, messages:[{role:user}] }
+
+  OpenAI-compatible (openai / groq / openrouter):
+             POST <baseUrl>/chat/completions
+             Headers: Authorization: Bearer <apiKey>
+             Body: { model, messages:[{role:system},{role:user}] }
+
+SECRET STORAGE KEYS
+  "blueprint.provider"  — the chosen Provider string
+  "blueprint.apiKey"    — the raw API key
+
+  LLMClient.fromSecrets(secrets)  reads both, returns null if either missing
+  LLMClient.saveToSecrets(...)    stores both atomically
+
+ERROR HANDLING
+  HTTP non-OK responses throw with status code + response body text included,
+  so the error message surfaced in the UI is actionable.
+
+================================================================================
+COMPONENT 3 — ARCHITECTURE AGENT, FILE STORAGE & PROMPTS
+================================================================================
+
+PURPOSE
+  Generates the initial ArchBlueprint JSON from a plain-text system
+  description (via LLM), writes it to .blueprint/arch.json and docs/ARCH.md,
+  and manages ADR storage. This is the foundation all other agents build on.
+
+FILES
+  src/agents/ArchitectureAgent.ts
+  src/storage/FileStore.ts
+  src/storage/AdrStore.ts
+  src/prompts/archPrompts.ts
+  src/prompts/adrPrompts.ts
+  media/setupWizard.html
+
+--- ArchitectureAgent ---
+
+  generate(systemDescription): Promise<ArchBlueprint>
+  — Calls LLM with ARCH_GENERATION_SYSTEM_PROMPT
+  — Strips markdown fences from response (model sometimes ignores JSON-only)
+  — Parses JSON, adds lastUpdated: ISO timestamp
+  — Throws with the raw response in the message if JSON.parse fails
+
+  ARCH_GENERATION_SYSTEM_PROMPT instructs the model to return raw JSON only,
+  matching the ArchBlueprint schema:
+    systemOverview, components[], dataFlow, constraints[], openQuestions[]
+  Rules enforced in the prompt: extract only stated/implied components,
+  do not invent, use empty arrays if nothing applies.
+
+--- FileStore ---
+
+  Root: first vscode.workspace.workspaceFolders entry
+  writeArchBlueprint(blueprint, systemName?)
+    — creates docs/ and .blueprint/ directories
+    — writes docs/ARCH.md via renderArchMd()
+    — writes .blueprint/arch.json (raw JSON, 2-space indent)
+  readArchBlueprint(): reads .blueprint/arch.json, returns null on error
+  isInitialized(): stat check on .blueprint/arch.json (no read)
+  getArchMdUri(): returns vscode.Uri for docs/ARCH.md
+
+--- AdrStore ---
+
+  Index file: .blueprint/adr-index.json  { nextId: number, adrs: ADR[] }
+
+  create(draft): assigns padded ID (String(nextId).padStart(4,'0')),
+    sets timestamp, writes docs/adr/<id>-<slug>.md, appends to index
+  getAll(): reads full index, returns adrs array
+  getById(id): linear scan of index
+  update(id, changes): merges changes, rewrites .md file and index
+  storeEmbedding(id, embedding[]): calls update — reserved for future
+    neural embedding upgrade (ADR.embedding field already exists in types)
+
+  ADR filename format: adrFilename() in adrPrompts.ts
+    — lowercases title, strips non-alphanumeric, replaces spaces with hyphens,
+      truncates slug to 50 chars
+    — example: "0001-use-postgresql-as-primary-database.md"
+
+--- renderArchMd ---
+
+  Renders a markdown document:
+    # Architecture: <systemName>
+    > Last updated: <date>
+    ## System Overview / Components table / Data Flow / Constraints / Open Questions
+  Components rendered as a markdown table: | Name | Responsibility | Technology |
+
+--- renderAdrMd ---
+
+  Renders MADR-style markdown:
+    # ADR-<id>: <title>
+    **Status:** / **Date:**
+    ## Context / ## Decision / ## Consequences
+
+--- setupWizard.html (init wizard UI) ---
+
+  7 screens navigated by postMessage commands:
+    screen-provider    Provider + API key input
+    screen-description System name + description textarea
+    screen-arch-loading  Spinner while LLM generates
+    screen-arch-done   Shows generated component/constraint summary
+    screen-constraints Constraint elicitation (3 sub-states: question / analyzing / draft)
+    screen-done        Completion summary
+    screen-error       Error display
+
+  Step indicator: 3 dots at top reflecting current step (1=provider, 2=arch, 3=constraints)
+
+  Message protocol (webview → extension):
+    saveProvider   { provider, apiKey }
+    generate       { systemName, systemDescription }
+    startConstraints
+    submitAnswer   { answer }
+    skipQuestion
+    saveDraft      { draft: ConstraintDraft }
+    discardDraft
+    viewArch
+
+  Message protocol (extension → webview):
+    init           { hasProvider, provider }
+    generating
+    success        { blueprint }
+    showQuestion   { question, placeholder, index, total }
+    analyzing
+    showDraft      { draft, index, total }
+    elicitationComplete { totalSaved }
+    error          { message }
+
+================================================================================
+COMPONENT 4 — CONSTRAINT ELICITATION AGENT
+================================================================================
+
+PURPOSE
+  After architecture generation, walks the developer through 5 structured
+  questions to surface existing constraints (tech choices, performance targets,
+  team conventions, integrations, security requirements). Each informative
+  answer is converted to a draft ADR for the developer to accept or discard.
+
+FILES
+  src/agents/ConstraintElicitationAgent.ts
+  src/prompts/constraintPrompts.ts
+
+THE 5 QUESTIONS (constraintPrompts.ts CONSTRAINT_QUESTIONS)
+  1. technology    "What technology choices are already locked in?"
+  2. scalability   "What are the scalability and performance expectations?"
+  3. conventions   "Are there team conventions or coding standards?"
+  4. integrations  "What external systems must this project integrate with?"
+  5. nonfunctional "Are there specific security, compliance, or availability requirements?"
+
+  Each QuestionStep has: id, question, placeholder (example answer shown in UI)
+
+AGENT METHODS
+  getQuestions(): returns the 5 QuestionStep objects
+  analyzeAnswer(question, answer): Promise<ConstraintAnalysisResult>
+    — returns { hasConstraint: false } immediately if answer is empty
+    — calls LLM with CONSTRAINT_ANALYSIS_SYSTEM_PROMPT
+    — parses JSON; returns { hasConstraint: false } on parse failure (safe default)
+
+LLM PROMPT LOGIC (CONSTRAINT_ANALYSIS_SYSTEM_PROMPT)
+  Instructs model to extract a CONCRETE architectural constraint.
+  Rules enforced: "We are using React" = yes; "We might use React" = no.
+  One ADR per response — the most significant constraint if multiple are mentioned.
+  Response shape if constraint found:
+    { hasConstraint: true, draft: { title, context, decision, consequences } }
+  Response shape if nothing concrete:
+    { hasConstraint: false }
+
+FLOW IN THE UI (screen-constraints)
+  Sub-state "cq-question": developer sees question + textarea + Submit/Skip buttons
+  On submit → sub-state "cq-analyzing": spinner visible
+  If hasConstraint: sub-state "cq-draft": shows title, context, decision, consequences
+    with Save ADR / Discard buttons
+  After save or discard: advance to next question
+  After all 5 questions: screen-done
+  At any point: developer can skip a question (no LLM call)
+
+ADR CREATION
+  Saved drafts go to AdrStore.create() with status "accepted".
+  totalSaved counter shown on screen-done ("N decisions recorded").
+
+================================================================================
+COMPONENT 5 — DIFF SUMMARIZER, RETRIEVAL AGENT & COMPLIANCE CHECK (PASS 1)
+================================================================================
+
+PURPOSE
+  When the developer runs "Review This Change Architecturally", the extension
+  reads the current git diff, extracts structural signals, retrieves the most
+  relevant ADRs using TF-IDF cosine similarity, then calls the LLM to check
+  for violations. This is Pass 1 of the two-pass compliance system.
+
+FILES
+  src/agents/DiffSummarizer.ts
+  src/agents/RetrievalAgent.ts
+  src/agents/ComplianceAgent.ts  (check() method)
+  src/prompts/compliancePrompts.ts  (COMPLIANCE_SYSTEM_PROMPT + builder)
+  media/compliancePanel.html
+
+--- DiffSummarizer ---
+
+  getDiff(workspaceRoot): runs "git diff --cached" and "git diff" in parallel
+  (maxBuffer: 2MB each), concatenates stdout. Returns "" on error.
+
+  summarize(rawDiff): extracts 4 structural signal categories from added lines:
+    newFiles        — from "+++ b/" diff headers (lockfiles excluded)
+    newImports      — lines matching /^(import\s|from\s|require\()/
+    newSignatures   — export function/class/interface/type/const patterns
+    newDependencies — "key": "version" lines when package.json changed
+  Deduplication via Set. Slice limits: imports 25, signatures 25, deps 15.
+  rawDiff truncated to 8000 chars for prompt safety.
+
+--- RetrievalAgent ---
+
+  TF-IDF cosine similarity implemented entirely in TypeScript (no npm deps).
+  Avoids heavy ML libraries to keep bundle size small for VSCode context.
+
+  retrieve(query, adrs, blueprint, topK=5):
+    — returns adrs unchanged if count <= topK
+    — builds corpus: all ADR texts + query
+    — computes smoothed IDF: log((N+1)/(df+1))+1  (prevents division by zero)
+    — computes TF-IDF vector for each ADR and the query (L2-normalised)
+    — cosine similarity = dot product (vectors already normalised)
+    — applies +0.15 boost when both ADR text and query mention the same
+      component name (min 3 chars)
+    — returns top-K sorted by score
+
+  static queryFromDiff(diff): concatenates newFiles + newSignatures +
+    newImports + newDependencies into one query string
+
+  ADR text used for ranking: title + context + decision + consequences
+
+  Tokenizer: lowercase, split on non-alphanumeric, min 3 chars, stopword list
+  (60 common English words filtered out).
+
+--- ComplianceAgent.check() (Pass 1) ---
+
+  Input: diffSummary, blueprint, top-5 relevantAdrs (from RetrievalAgent)
+  Calls LLM with COMPLIANCE_SYSTEM_PROMPT
+  Parses JSON; returns { violation: false, violations: [] } on parse failure
+
+  COMPLIANCE_SYSTEM_PROMPT instructs model:
+    — return only real violations (things that genuinely contradict a decision)
+    — severity guide: high=wrong tech/framework, medium=wrong pattern, low=convention
+    — response shape if clean: { "violation": false, "violations": [] }
+    — response shape if violations:
+        { "violation": true, "violations": [
+            { constraintId, description, severity, affectedCodeLocation }
+        ]}
+
+  buildCompliancePrompt() injects:
+    — constraints list from blueprint
+    — top-5 ADRs (title + status + decision only — no context/consequences
+      to keep prompts focused)
+    — diff summary (files, dependencies, imports, signatures)
+
+--- compliancePanel.html ---
+
+  7 screens:
+    screen-checking    Default visible — spinner (no race condition)
+    screen-no-diff     No uncommitted changes detected
+    screen-clean       Pass 1 clean, Pass 2 clean
+    screen-violations  One or more violations found
+    screen-extension   New structural element detected (Pass 2)
+    screen-saved       ADR/extension saved confirmation
+    screen-error       Error display
+
+  Violations rendered as color-coded cards (red/orange/blue border per severity)
+  with severity badge, constraint reference, description, affected location.
+
+  Resolution form (violations screen):
+    Radio: "Update Architecture" | "Modify Code"
+    Textarea: reasoning (required)
+    Button: "Save Decision as ADR"
+
+  Message protocol (extension → webview):
+    noDiff
+    result         { result: ComplianceResult, diffSummary }
+    saved          { adrId }
+    extensionSaved { adrId }
+    error          { message }
+
+  Message protocol (webview → extension):
+    saveDecision   { resolution, reasoning, violations[] }
+    confirmExtension { extension: ExtensionDetail, reasoning }
+    dismissExtension  (no server action — webview shows clean screen locally)
+
+================================================================================
+COMPONENT 6 — COMPLIANCE AGENT PASS 2 (EXTENSION DETECTION)
+================================================================================
+
+PURPOSE
+  After Pass 1 returns no violations, a second LLM pass checks whether the
+  code introduces a genuinely new structural element (component, service,
+  layer) that is absent from ARCH.md but does not contradict it. If confirmed
+  by the developer, ARCH.md is updated and an ADR is created automatically.
+
+  The two-pass design is intentional: conflating violations (bad) with
+  extensions (neutral/good) causes developer confusion.
+
+FILES
+  src/agents/ComplianceAgent.ts  (detectExtension() method)
+  src/prompts/compliancePrompts.ts  (EXTENSION_DETECTION_SYSTEM_PROMPT + builder)
+  src/types.ts  (ExtensionDetail, ComplianceResult.extension field)
+
+--- ComplianceAgent.detectExtension() ---
+
+  Input: diffSummary, blueprint (no ADRs — only architecture components matter)
+  Returns: ExtensionResult { extensionDetected: boolean, extension?: ExtensionDetail }
+
+  ExtensionDetail shape: { name, responsibility, technology?, rationale }
+
+  Parse failure returns { extensionDetected: false } (safe default — avoids
+  false positives that interrupt the developer unnecessarily).
+
+EXTENSION_DETECTION_SYSTEM_PROMPT instructs model:
+  — only report STRUCTURALLY NEW elements (new layer, service, subsystem)
+  — do NOT report: adding methods to existing components, new routes in existing
+    API, refactoring within existing responsibility
+  — do NOT report: things already covered by a component's responsibility
+  — when in doubt, return extensionDetected: false
+
+  buildExtensionDetectionPrompt() injects:
+    — existing component list: name + responsibility + technology
+    — diff summary (same 4 signal categories)
+
+TWO-PASS FLOW (handleReviewChange in extension.ts)
+  1. Run Pass 1 (check())
+     → if violation: post "result" with violations, stop
+  2. Run Pass 2 (detectExtension()) — only reached if Pass 1 is clean
+  3. Merge: { ...pass1Result, ...extensionResult }
+  4. Post single "result" message to webview
+
+  The webview inspects the result object:
+    result.violation && violations.length  → screen-violations
+    result.extensionDetected && extension  → screen-extension
+    else                                   → screen-clean
+
+EXTENSION CONFIRMATION FLOW
+  Developer clicks "Register as New Component" in screen-extension
+  → webview sends: { command: "confirmExtension", extension: ExtensionDetail, reasoning }
+  Extension host:
+    1. reads current blueprint from .blueprint/arch.json
+    2. appends new ArchComponent to blueprint.components
+    3. updates blueprint.lastUpdated
+    4. calls store.writeArchBlueprint() — rewrites both arch.json and ARCH.md
+    5. calls adrStore.create() — creates ADR with status "accepted"
+    6. refreshProviders() — updates both sidebar trees
+    7. posts { command: "extensionSaved", adrId }
+  Webview shows screen-saved: "ADR-XXXX created and ARCH.md updated."
+
+  Developer clicks "Dismiss" → webview calls showScreen('screen-clean') locally.
+  No message sent to extension host. Nothing is recorded.
+
+================================================================================
+COMPONENT 7 — UI PANELS POLISH
+================================================================================
+
+PURPOSE
+  Makes the sidebar views functional, wires ADR click-to-open, builds the
+  audit trail webview, and introduces a shared refreshProviders() helper so
+  all tree views stay in sync whenever ADRs change.
+
+FILES
+  src/ui/AdrTreeProvider.ts      ADR browser sidebar tree
+  src/ui/AuditTrailTreeProvider.ts  NEW — audit trail sidebar tree
+  media/auditTrail.html          NEW — rich timeline webview
+  src/extension.ts               refactored
+
+--- AdrTreeProvider ---
+
+  Groups ADRs by status (Accepted / Proposed / Deprecated / Superseded).
+  Header items show group name + count; child items show each ADR.
+
+  AdrItem now has a command property:
+    { command: "blueprint.openAdr", title: "Open ADR", arguments: [adr] }
+  Clicking an ADR in the sidebar opens its .md file in markdown preview.
+
+  Icons per status: check / circle-outline / circle-slash / arrow-right
+
+--- AuditTrailTreeProvider (NEW) ---
+
+  Flat list sorted by timestamp descending (newest first).
+  Each AuditItem shows:
+    label:       ADR title
+    description: date in "Jun 12, 2026" format
+    tooltip:     MarkdownString with status + first 200 chars of decision
+    command:     blueprint.openAdr → opens .md file in preview
+
+  Empty state: single item "No decisions recorded yet" with history icon.
+
+--- auditTrail.html (NEW) ---
+
+  3 screens:
+    screen-loading  Default (spinner while waiting for data)
+    screen-empty    Empty state (no ADRs yet)
+    screen-trail    Timeline of ADR cards
+
+  Ready-signal handshake:
+    On DOMContentLoaded, webview posts { command: "ready" } to extension host.
+    Extension host responds with { command: "load", adrs: ADR[] }.
+    This avoids a race condition where postMessage arrives before the
+    script's message listener is registered.
+
+  Each ADR card shows:
+    — status badge (accepted=green, proposed=blue, deprecated=gray,
+      superseded=orange) with matching left border color
+    — "ADR-XXXX" ID in monospace
+    — formatted date/time
+    — "Open" button (posts { command: "openAdr", adr })
+    — ADR title (bold)
+    — decision text (2-line CSS clamp with overflow hidden)
+
+  adrMap{ id → ADR } built at render time so Open button has the full ADR
+  object without storing it in data attributes.
+
+--- blueprint.openAdr command ---
+
+  Registered in extension.ts activate().
+  Arguments: [ADR object] (passed by tree item command.arguments)
+  Resolves ADR file path: docs/adr/<adrFilename(adr)>
+  Calls markdown.showPreview on the URI.
+  Shows warning if file not found (e.g. manually deleted).
+
+--- refreshProviders() helper ---
+
+  async function that reads AdrStore.getAll() once and calls both:
+    adrTreeProvider.refresh(adrs)
+    auditTrailProvider.refresh(adrs)
+  Replaces all individual adrTreeProvider.refresh() calls throughout the
+  extension. Called after every ADR create and after initialization check.
+
+--- Module-level tree providers ---
+
+  adrTreeProvider and auditTrailProvider promoted from local variables in
+  activate() to module-level, consistent with statusBar. Avoids threading
+  them as parameters through handleInit, handleReviewChange, etc.
+
+--- handleViewAuditTrail ---
+
+  Opens "auditTrail" BlueprintPanel and sets the message handler BEFORE
+  calling loadMedia(). This ensures the handler is in place when the webview
+  fires "ready" immediately after its script runs.
+
+================================================================================
+COMPONENT 8 — PRE-CHECK AGENT (PROMPT-LEVEL CONFLICT DETECTION)
+================================================================================
+
+PURPOSE
+  Developer submits a natural-language prompt BEFORE sending it to an AI
+  coder. BluePrint checks whether the stated intent conflicts with architecture
+  constraints or ADRs. Conflicts include a "suggestion" field — since no code
+  exists yet, the model is asked how to rephrase the prompt to avoid the issue.
+  This is the earliest possible intervention in the AI-assisted workflow.
+
+FILES
+  src/prompts/preCheckPrompts.ts  NEW
+  src/agents/PreCheckAgent.ts     NEW
+  media/preCheckPanel.html        NEW
+  src/ui/BlueprintPanel.ts        added "preCheck" PanelType
+  src/extension.ts                handlePreCheck() rewritten as async
+
+--- preCheckPrompts.ts ---
+
+  Types defined here (not in types.ts — they are LLM-response-specific):
+    PreCheckConflict  { constraintId, description, severity, suggestion }
+    PreCheckResult    { hasConflicts, conflicts: PreCheckConflict[] }
+
+  PRE_CHECK_SYSTEM_PROMPT distinguishes this check from compliance:
+    — PREVENTIVE: reason about intent, not code
+    — Each conflict includes a "suggestion" on how to rephrase
+    — Severity guide same as compliance (high/medium/low)
+    — Only flags concerns grounded in stated constraints/ADRs
+
+  buildPreCheckPrompt(promptText, blueprint, adrs) injects:
+    — constraint list
+    — component list (name + responsibility + technology)
+    — top-5 relevant ADRs (title + status + decision)
+    — the developer's prompt text
+
+--- PreCheckAgent ---
+
+  check(promptText, blueprint, adrs): Promise<PreCheckResult>
+  Single LLM call. Parse failure returns { hasConflicts: false, conflicts: [] }.
+
+  Retrieval: the developer's raw prompt text is used directly as the TF-IDF
+  query (RetrievalAgent.retrieve(promptText, allAdrs, blueprint, 5)) — no
+  diff processing needed since there is no diff yet.
+
+--- preCheckPanel.html ---
+
+  5 screens:
+    screen-input      Default — textarea + "Check Architecture" button + "View ARCH.md"
+    screen-checking   Spinner while LLM runs
+    screen-clean      Green check — no conflicts
+    screen-conflicts  One or more concern cards
+    screen-error      Error with "Try Again" button
+
+  Keyboard shortcut: Ctrl+Enter / Cmd+Enter in the textarea triggers check.
+
+  Conflict cards:
+    — same severity badge + color system as compliancePanel
+    — SUGGESTION block (VSCode blockquote style) — key visual difference
+      from violation cards in compliancePanel
+
+  "Check Another Prompt" on all result screens returns to input screen
+  WITHOUT closing the panel, preserving the textarea.
+
+--- handlePreCheck (extension.ts) ---
+
+  Guard: returns early with a warning if project is not initialized.
+  Opens "preCheck" panel, registers message handler, loads HTML.
+
+  On "check" message:
+    1. reads blueprint + all ADRs
+    2. runs RetrievalAgent on the prompt text as query
+    3. calls PreCheckAgent.check()
+    4. posts { command: "result", result }
+
+  On "openArch" message:
+    calls openArchMd()
+
+================================================================================
+DATA FLOW SUMMARY — END-TO-END
+================================================================================
+
+INITIALIZATION FLOW
+  1. Developer runs "BluePrint: Initialize Project"
+  2. setupWizard.html opens (screen-provider)
+  3. Provider + API key → saved to VSCode SecretStorage
+  4. System name + description → ArchitectureAgent.generate() → LLM call
+  5. Blueprint JSON → FileStore.writeArchBlueprint()
+     → .blueprint/arch.json  (machine-readable)
+     → docs/ARCH.md           (human-readable markdown)
+  6. context key "blueprint.initialized" = true → sidebar appears
+  7. Constraint elicitation: 5 questions → ConstraintElicitationAgent
+     → each accepted answer → AdrStore.create() → docs/adr/<id>-<slug>.md
+     + updated .blueprint/adr-index.json
+
+COMPLIANCE REVIEW FLOW
+  1. Developer runs "BluePrint: Review This Change Architecturally"
+  2. compliancePanel.html opens (screen-checking, default visible)
+  3. DiffSummarizer.getDiff() → git diff --cached + git diff
+  4. DiffSummarizer.summarize() → DiffSummary
+  5. RetrievalAgent.retrieve() → top-5 relevant ADRs (TF-IDF)
+  6. ComplianceAgent.check() → LLM → Pass 1 result
+     → if violation: post result, show screen-violations
+  7. ComplianceAgent.detectExtension() → LLM → Pass 2 result
+     → if extensionDetected: post result, show screen-extension
+     → if clean: post result, show screen-clean
+  8. Developer action on violations:
+     — "Save Decision as ADR" → AdrStore.create() → screen-saved
+  9. Developer action on extension:
+     — "Register" → blueprint updated + AdrStore.create() → screen-saved
+     — "Dismiss" → screen-clean (local, no server action)
+
+PRE-CHECK FLOW
+  1. Developer runs "BluePrint: Pre-Check Prompt Against Architecture"
+  2. preCheckPanel.html opens (screen-input)
+  3. Developer types prompt, clicks "Check Architecture"
+  4. RetrievalAgent.retrieve(promptText, ...) → top-5 relevant ADRs
+  5. PreCheckAgent.check() → LLM → PreCheckResult
+     → if conflicts: show screen-conflicts with suggestions
+     → if clean: show screen-clean
+  6. Developer can check another prompt without closing the panel
+
+================================================================================
+FILE STORAGE LAYOUT (workspace root)
+================================================================================
+
+  .blueprint/
+    arch.json           ArchBlueprint (machine-readable, updated on extension confirm)
+    adr-index.json      { nextId: number, adrs: ADR[] }  (source of truth for all ADRs)
+
+  docs/
+    ARCH.md             Rendered architecture document (updated on extension confirm)
+    adr/
+      0001-<slug>.md    MADR-format ADR files (one per decision)
+      0002-<slug>.md
+      ...
+
+================================================================================
+FUTURE EXTENSIONS (see future_extensions.txt)
+================================================================================
+
+  1. Split light/heavy LLM tier
+     Current: one provider for all agents.
+     Future: separate fast/cheap model for diff summarization and ADR drafting
+     vs. a more capable model for compliance and extension detection.
+     LLMClient already structured to support this.
+
+  2. Neural embeddings for Retrieval Agent
+     Current: TF-IDF cosine similarity (no API calls, fast, good at project scale).
+     Future: Gemini text-embedding-004 or OpenAI text-embedding-3-small for
+     better semantic retrieval.
+     ADR.embedding field already reserved in the type definition.
+
+================================================================================
+BUILD & RUN
+================================================================================
+
+  Build:    node esbuild.js
+  Watch:    node esbuild.js --watch
+  Debug:    F5 in VSCode (launches Extension Development Host)
+  Package:  vsce package  (requires vsce installed globally)
+
+  TypeScript compiler: strict mode, ES2020 target, CommonJS output, Node types.
+  No runtime npm dependencies — all functionality is implemented in TypeScript
+  using VSCode's built-in APIs and the Node.js standard library (child_process
+  for git diff, util.promisify for async exec).

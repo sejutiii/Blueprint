@@ -1,5 +1,11 @@
 node_modules/
 dist/
+out/
 *.vsix
 .vscode-test/
 *.js.map
+
+# BluePrint runtime data (created in workspace under test)
+.blueprint/
+docs/adr/
+docs/ARCH.md

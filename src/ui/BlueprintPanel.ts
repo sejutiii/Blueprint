@@ -1,26 +1,30 @@
 import * as vscode from "vscode";
 
-export type PanelType = "setup" | "postGeneration" | "archViewer" | "auditTrail";
+export type PanelType = "setup" | "postGeneration" | "archViewer" | "auditTrail" | "preCheck" | "hub";
 
-/**
- * Reusable factory for all BluePrint webview panels.
- * Each panel type is a singleton — reopening an existing panel reveals it.
- */
 export class BlueprintPanel {
   private static panels = new Map<PanelType, BlueprintPanel>();
 
+  readonly nonce: string;
+  readonly cspSource: string;
+
   private readonly panel: vscode.WebviewPanel;
   private disposables: vscode.Disposable[] = [];
+  private messageHandler?: (msg: Record<string, unknown>) => void;
 
   private constructor(
     private readonly type: PanelType,
     private readonly extensionUri: vscode.Uri
   ) {
+    this.nonce = BlueprintPanel.generateNonce();
+
     const titles: Record<PanelType, string> = {
-      setup: "BluePrint: Setup Wizard",
-      postGeneration: "BluePrint: Compliance Review",
-      archViewer: "BluePrint: Architecture (ARCH.md)",
-      auditTrail: "BluePrint: Decision Audit Trail",
+      setup:         "BluePrint: Setup",
+      postGeneration:"BluePrint: Compliance Review",
+      archViewer:    "BluePrint: Architecture",
+      auditTrail:    "BluePrint: Audit Trail",
+      preCheck:      "BluePrint: Pre-Check",
+      hub:           "BluePrint",
     };
 
     this.panel = vscode.window.createWebviewPanel(
@@ -34,12 +38,12 @@ export class BlueprintPanel {
       }
     );
 
+    this.cspSource = this.panel.webview.cspSource;
     this.panel.webview.html = this.getLoadingHtml(titles[type]);
 
     this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
-
     this.panel.webview.onDidReceiveMessage(
-      (message) => this.handleMessage(message),
+      (msg: Record<string, unknown>) => this.messageHandler?.(msg),
       null,
       this.disposables
     );
@@ -56,13 +60,22 @@ export class BlueprintPanel {
     return instance;
   }
 
-  postMessage(message: unknown): void {
-    this.panel.webview.postMessage(message);
+  setMessageHandler(handler: (msg: Record<string, unknown>) => void): void {
+    this.messageHandler = handler;
   }
 
-  private handleMessage(message: { command: string; [key: string]: unknown }): void {
-    // Individual panel message handlers will be wired in later components
-    console.log(`[BlueprintPanel:${this.type}] received message:`, message.command);
+  async loadMedia(filename: string, vars: Record<string, string> = {}): Promise<void> {
+    const fileUri = vscode.Uri.joinPath(this.extensionUri, "media", filename);
+    const raw = Buffer.from(await vscode.workspace.fs.readFile(fileUri)).toString("utf-8");
+    let html = raw;
+    for (const [key, value] of Object.entries(vars)) {
+      html = html.split(`{{${key}}}`).join(value);
+    }
+    this.panel.webview.html = html;
+  }
+
+  postMessage(message: unknown): void {
+    this.panel.webview.postMessage(message);
   }
 
   private getLoadingHtml(title: string): string {
@@ -70,33 +83,27 @@ export class BlueprintPanel {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title}</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline';">
   <style>
     body {
       font-family: var(--vscode-font-family);
       color: var(--vscode-foreground);
       background: var(--vscode-editor-background);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-      margin: 0;
+      display: flex; align-items: center; justify-content: center;
+      height: 100vh; margin: 0;
     }
-    .placeholder {
-      text-align: center;
-      opacity: 0.6;
-    }
-    h2 { font-weight: 400; }
+    p { opacity: 0.5; }
   </style>
 </head>
-<body>
-  <div class="placeholder">
-    <h2>${title}</h2>
-    <p>Loading…</p>
-  </div>
-</body>
+<body><p>${title}</p></body>
 </html>`;
+  }
+
+  private static generateNonce(): string {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    return Array.from({ length: 32 }, () =>
+      chars[Math.floor(Math.random() * chars.length)]
+    ).join("");
   }
 
   private dispose(): void {

@@ -1,0 +1,36 @@
+FUTURE EXTENSIONS
+=================
+
+1. Split light/heavy tier LLM providers
+   Currently: user picks one provider for all agents.
+   Future: let user configure two providers separately —
+   a fast/cheap model for light tasks (diff summarization, keyword extraction, ADR drafting)
+   and a more capable model for heavy tasks (compliance checking, extension detection, ARCH.md generation).
+   The LLMClient already has a `tier` parameter placeholder for this.
+
+2. Neural embeddings for the Retrieval Agent
+   Currently: TF-IDF cosine similarity computed locally (no extra API calls, works well at project scale).
+   Future: replace with provider-specific embedding APIs for better semantic retrieval —
+   Gemini: text-embedding-004, OpenAI: text-embedding-3-small.
+   The ADR type already has an `embedding: number[]` field reserved for this.
+   Anthropic and Groq don't offer embedding APIs — would need a fallback strategy.
+
+3. ARCH.md as a living document
+   Currently: ARCH.md is written once on init and updated only when a new component is
+   confirmed via compliance review (extension detection). The Constraints and Open Questions
+   sections go stale after constraint elicitation adds ADRs.
+   Future: ARCH.md should always reflect the current state of the codebase. This means:
+   - After constraint elicitation, sync confirmed constraints back into arch.json and re-render ARCH.md.
+   - Provide a "Regenerate ARCH.md from codebase" command that re-analyzes the project
+     and rewrites the architecture document (components, constraints, data flow) to match reality.
+   - Consider hooking into file save/commit events to prompt a refresh when significant
+     structural changes are detected.
+
+4. Non-git diff support
+   Currently: DiffSummarizer runs `git diff --cached` and `git diff` — requires the workspace
+   to be a git repository with at least one commit. Projects without git get an empty diff
+   and the "No uncommitted changes" screen regardless of actual file state.
+   Future: detect whether the workspace is a git repo first. If not, fall back to a
+   snapshot-based approach — save a file manifest (paths + hashes) on init, then diff
+   the current file state against that snapshot when the user runs a compliance review.
+   This would allow BluePrint to work on brand-new projects that haven't been committed yet.
