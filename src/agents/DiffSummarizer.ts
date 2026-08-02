@@ -1,18 +1,58 @@
 import { exec } from "child_process";
 import { promisify } from "util";
+import * as fs from "fs/promises";
+import * as path from "path";
 import { DiffSummary } from "../types";
 
 const execAsync = promisify(exec);
 
+// Cap how much untracked-file content we synthesize into the diff, so a
+// workspace with a lot of new-but-unstaged files can't blow up the prompt.
+const MAX_UNTRACKED_FILES    = 30;
+const MAX_UNTRACKED_FILE_LEN = 20_000;
+
 export class DiffSummarizer {
   async getDiff(workspaceRoot: string): Promise<string> {
     try {
-      // Collect both staged and unstaged changes
-      const [staged, unstaged] = await Promise.all([
+      // Collect staged, unstaged, AND untracked changes. `git diff` and
+      // `git diff --cached` are both blind to untracked files (git status `??`),
+      // so a brand-new file that hasn't been `git add`ed yet — the most common
+      // shape for a genuinely new component — would otherwise be invisible here.
+      const [staged, unstaged, untracked] = await Promise.all([
         execAsync("git diff --cached", { cwd: workspaceRoot, maxBuffer: 2 * 1024 * 1024 }),
         execAsync("git diff",          { cwd: workspaceRoot, maxBuffer: 2 * 1024 * 1024 }),
+        execAsync("git ls-files --others --exclude-standard", { cwd: workspaceRoot, maxBuffer: 2 * 1024 * 1024 }),
       ]);
-      return staged.stdout + unstaged.stdout;
+
+      const untrackedFiles = untracked.stdout
+        .split("\n")
+        .map((f) => f.trim())
+        .filter(Boolean)
+        .slice(0, MAX_UNTRACKED_FILES);
+
+      const untrackedDiffs = await Promise.all(
+        untrackedFiles.map((file) => this.buildUntrackedDiff(workspaceRoot, file))
+      );
+
+      return staged.stdout + unstaged.stdout + untrackedDiffs.filter(Boolean).join("");
+    } catch {
+      return "";
+    }
+  }
+
+  // Synthesizes a unified-diff-shaped block for an untracked file so the rest
+  // of the pipeline (which parses "+++ b/" headers and "+"-prefixed lines)
+  // treats it the same as any other addition.
+  private async buildUntrackedDiff(workspaceRoot: string, file: string): Promise<string> {
+    try {
+      const buffer = await fs.readFile(path.join(workspaceRoot, file));
+      if (buffer.includes(0)) { return ""; } // skip binary files
+
+      const content = buffer.toString("utf8").slice(0, MAX_UNTRACKED_FILE_LEN);
+      const lines   = content.split("\n");
+      const body    = lines.map((l) => `+${l}`).join("\n");
+
+      return `diff --git a/${file} b/${file}\nnew file mode 100644\n--- /dev/null\n+++ b/${file}\n@@ -0,0 +1,${lines.length} @@\n${body}\n`;
     } catch {
       return "";
     }

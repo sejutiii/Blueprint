@@ -1,4 +1,6 @@
 import { ADR, ArchBlueprint, DiffSummary } from "../types";
+import { EmbeddingService } from "../embeddings/EmbeddingService";
+import { AdrStore } from "../storage/AdrStore";
 
 const STOPWORDS = new Set([
   "a","an","the","and","or","but","in","on","at","to","for","of","with","by",
@@ -7,19 +9,29 @@ const STOPWORDS = new Set([
   "this","these","those","it","its","we","our","they","their","he","she","you",
 ]);
 
+// Weight given to semantic (embedding) similarity vs. lexical (TF-IDF) similarity
+// when both are available. Equal-weighted blend: neither signal dominates.
+const SEMANTIC_WEIGHT = 0.5;
+
 export class RetrievalAgent {
+  constructor(private readonly embeddings: EmbeddingService = new EmbeddingService()) {}
+
   // ── Public API ────────────────────────────────────────────────────────────
 
   /**
-   * Return the top-K most relevant ADRs for the given query.
-   * Falls back to returning all ADRs if count <= topK.
+   * Return the top-K most relevant ADRs for the given query, ranked by a blend of
+   * TF-IDF lexical similarity and local-embedding semantic similarity. Embeddings
+   * are generated lazily and cached on the ADR (via adrStore) so repeat retrievals
+   * don't re-embed unchanged ADRs. Semantic scoring is skipped (falls back to pure
+   * TF-IDF) if the local embedding model is unavailable.
    */
-  retrieve(
+  async retrieve(
     query: string,
     adrs: ADR[],
     blueprint: ArchBlueprint | null,
-    topK = 5
-  ): ADR[] {
+    topK = 5,
+    adrStore?: AdrStore | null
+  ): Promise<ADR[]> {
     if (adrs.length <= topK) { return adrs; }
     if (!query.trim())       { return adrs.slice(0, topK); }
 
@@ -34,12 +46,23 @@ export class RetrievalAgent {
       .map((c) => c.name.toLowerCase());
 
     const queryLower = query.toLowerCase();
+    const queryEmbedding = await this.embeddings.embed(query);
 
-    const scored = adrs.map((adr, i) => {
-      const adrVec   = RetrievalAgent.tfidf(adrTexts[i], vocab, idf);
-      let score      = RetrievalAgent.cosine(queryVec, adrVec);
+    const scored: { adr: ADR; score: number }[] = [];
+    for (let i = 0; i < adrs.length; i++) {
+      const adr = adrs[i];
+      const adrVec = RetrievalAgent.tfidf(adrTexts[i], vocab, idf);
+      let score    = RetrievalAgent.cosine(queryVec, adrVec);
+
+      if (queryEmbedding) {
+        const adrEmbedding = await this.ensureEmbedding(adr, adrTexts[i], adrStore);
+        if (adrEmbedding && adrEmbedding.length === queryEmbedding.length) {
+          const semanticScore = RetrievalAgent.cosineArrays(queryEmbedding, adrEmbedding);
+          score = (1 - SEMANTIC_WEIGHT) * score + SEMANTIC_WEIGHT * semanticScore;
+        }
+      }
+
       const adrLower = adrTexts[i].toLowerCase();
-
       // Boost when both the ADR and the query mention the same component
       for (const name of componentNames) {
         if (name.length >= 3 && adrLower.includes(name) && queryLower.includes(name)) {
@@ -47,13 +70,31 @@ export class RetrievalAgent {
         }
       }
 
-      return { adr, score };
-    });
+      scored.push({ adr, score });
+    }
 
     return scored
       .sort((a, b) => b.score - a.score)
       .slice(0, topK)
       .map((s) => s.adr);
+  }
+
+  /** Returns the ADR's cached embedding, generating and persisting one if missing/stale. */
+  private async ensureEmbedding(
+    adr: ADR,
+    text: string,
+    adrStore?: AdrStore | null
+  ): Promise<number[] | null> {
+    if (adr.embedding) { return adr.embedding; }
+
+    const embedding = await this.embeddings.embed(text);
+    if (embedding) {
+      adr.embedding = embedding;
+      if (adrStore) {
+        try { await adrStore.storeEmbedding(adr.id, embedding); } catch { /* best effort */ }
+      }
+    }
+    return embedding;
   }
 
   /** Build a plain-text query string from a DiffSummary. */
@@ -136,5 +177,12 @@ export class RetrievalAgent {
     let dot = 0;
     for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; }
     return dot; // already L2-normalised
+  }
+
+  /** Cosine similarity between two already L2-normalized embedding vectors. */
+  private static cosineArrays(a: number[], b: number[]): number {
+    let dot = 0;
+    for (let i = 0; i < a.length; i++) { dot += a[i] * b[i]; }
+    return dot;
   }
 }

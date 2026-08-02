@@ -3,7 +3,7 @@ import { BlueprintPanel } from "./ui/BlueprintPanel";
 import { AdrTreeProvider } from "./ui/AdrTreeProvider";
 import { AuditTrailTreeProvider } from "./ui/AuditTrailTreeProvider";
 import { StatusBarManager } from "./ui/StatusBarManager";
-import { LLMClient, Provider } from "./llm/LLMClient";
+import { LLMClient, Provider, PROVIDER_LABELS } from "./llm/LLMClient";
 import { FileStore } from "./storage/FileStore";
 import { AdrStore } from "./storage/AdrStore";
 import { ArchitectureAgent } from "./agents/ArchitectureAgent";
@@ -136,10 +136,13 @@ async function handleInit(context: vscode.ExtensionContext): Promise<void> {
 
   const existingClient   = await LLMClient.fromSecrets(context.secrets);
   const existingProvider = await context.secrets.get("blueprint.provider");
+  const defaultConfig    = LLMClient.getDefault();
   panel.postMessage({
     command: "init",
     hasProvider: !!existingClient,
     provider: existingProvider ?? null,
+    hasDefault: !!defaultConfig,
+    defaultProviderLabel: defaultConfig ? PROVIDER_LABELS[defaultConfig.provider] : null,
   });
 
   let constraintAgent: ConstraintElicitationAgent | null = null;
@@ -155,6 +158,14 @@ async function handleInit(context: vscode.ExtensionContext): Promise<void> {
           message.provider as Provider,
           message.apiKey as string
         );
+        break;
+      }
+
+      case "useDefault": {
+        const applied = await LLMClient.useDefault(context.secrets);
+        if (!applied) {
+          panel.postMessage({ command: "error", message: "No default API key is configured." });
+        }
         break;
       }
 
@@ -429,7 +440,7 @@ async function handleCheckViolations(context: vscode.ExtensionContext): Promise<
 
     const { diffSummary, blueprint, allAdrs, llm } = ctx;
     const query        = RetrievalAgent.queryFromDiff(diffSummary);
-    const relevantAdrs = new RetrievalAgent().retrieve(query, allAdrs, blueprint, 5);
+    const relevantAdrs = await new RetrievalAgent().retrieve(query, allAdrs, blueprint, 5, AdrStore.fromWorkspace());
     const pass1        = await new ComplianceAgent(llm).check(diffSummary, blueprint, relevantAdrs);
 
     statusBar[pass1.violation ? "setViolationFound" : "setOk"]();
@@ -471,7 +482,7 @@ async function handleReviewChange(context: vscode.ExtensionContext): Promise<voi
 
     const { diffSummary, blueprint, allAdrs, llm } = ctx;
     const query        = RetrievalAgent.queryFromDiff(diffSummary);
-    const relevantAdrs = new RetrievalAgent().retrieve(query, allAdrs, blueprint, 5);
+    const relevantAdrs = await new RetrievalAgent().retrieve(query, allAdrs, blueprint, 5, AdrStore.fromWorkspace());
     const agent        = new ComplianceAgent(llm);
 
     const [pass1, pass2] = await Promise.all([
@@ -575,9 +586,9 @@ async function handlePreCheck(context: vscode.ExtensionContext): Promise<void> {
           }
 
           // Use the developer's prompt text as the retrieval query
-          const relevantAdrs = new RetrievalAgent().retrieve(promptText, allAdrs, blueprint, 5);
+          const relevantAdrs = await new RetrievalAgent().retrieve(promptText, allAdrs, blueprint, 5, adrStore);
           const result = await new PreCheckAgent(llm).check(promptText, blueprint, relevantAdrs);
-          panel.postMessage({ command: "result", result });
+          panel.postMessage({ command: "result", result, retrievedAdrs: relevantAdrs });
 
         } catch (err) {
           panel.postMessage({ command: "error", message: String(err) });
@@ -587,6 +598,11 @@ async function handlePreCheck(context: vscode.ExtensionContext): Promise<void> {
 
       case "openArch": {
         await openArchMd();
+        break;
+      }
+
+      case "openAdr": {
+        await openAdrFile(msg.adr as ADR);
         break;
       }
     }

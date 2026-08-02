@@ -116,4 +116,20 @@ export class LLMClient {
     await secrets.store("blueprint.provider", provider);
     await secrets.store("blueprint.apiKey", apiKey);
   }
+
+  // Baked in at build time from .env (BLUEPRINT_DEFAULT_PROVIDER / BLUEPRINT_DEFAULT_API_KEY),
+  // never committed to source. Lets onboarding skip the "paste an API key" step.
+  static getDefault(): { provider: Provider; apiKey: string } | null {
+    const provider = process.env.BLUEPRINT_DEFAULT_PROVIDER as Provider | undefined;
+    const apiKey   = process.env.BLUEPRINT_DEFAULT_API_KEY;
+    if (!provider || !apiKey || !(provider in PROVIDER_LABELS)) { return null; }
+    return { provider, apiKey };
+  }
+
+  static async useDefault(secrets: vscode.SecretStorage): Promise<boolean> {
+    const def = LLMClient.getDefault();
+    if (!def) { return false; }
+    await LLMClient.saveToSecrets(secrets, def.provider, def.apiKey);
+    return true;
+  }
 }

@@ -231,6 +231,21 @@
   <div class="card">
 
     <!-- ════════════════════════════════════
+         SCREEN 0 — Default Key Choice
+    ════════════════════════════════════ -->
+    <div id="screen-key-choice" class="hidden">
+      <h2>LLM Provider</h2>
+      <p class="subtitle">
+        BluePrint has a default <span id="default-provider-label">API key</span> ready to go, or you can
+        provide your own.
+      </p>
+      <div class="actions" style="justify-content: flex-start; flex-direction: column; align-items: stretch; gap: 10px;">
+        <button id="btn-use-default">Use default API key</button>
+        <button class="secondary" id="btn-use-own">Provide my own API key</button>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════
          SCREEN 1 — Provider Config
     ════════════════════════════════════ -->
     <div id="screen-provider">
@@ -402,7 +417,7 @@
 
   // ── Screen management ──────────────────────────────
   const allScreens = [
-    'screen-provider', 'screen-description', 'screen-arch-loading',
+    'screen-key-choice', 'screen-provider', 'screen-description', 'screen-arch-loading',
     'screen-arch-done', 'screen-constraints', 'screen-done', 'screen-error',
   ];
 
@@ -440,6 +455,18 @@
   // ── Initial state ──────────────────────────────────
   setDots(1);
   showScreen('screen-provider');
+
+  // ── Screen 0: Default key choice ───────────────────
+  document.getElementById('btn-use-default').addEventListener('click', () => {
+    vscode.postMessage({ command: 'useDefault' });
+    showScreen('screen-description');
+    setDots(2);
+  });
+
+  document.getElementById('btn-use-own').addEventListener('click', () => {
+    showScreen('screen-provider');
+    setDots(1);
+  });
 
   // ── Screen 1: Provider ─────────────────────────────
   document.getElementById('btn-provider-next').addEventListener('click', () => {
@@ -530,6 +557,11 @@
           if (msg.provider) document.getElementById('provider-select').value = msg.provider;
           showScreen('screen-description');
           setDots(2);
+        } else if (msg.hasDefault) {
+          document.getElementById('default-provider-label').textContent =
+            msg.defaultProviderLabel ? `${msg.defaultProviderLabel} API key` : 'API key';
+          showScreen('screen-key-choice');
+          setDots(1);
         } else {
           showScreen('screen-provider');
           setDots(1);

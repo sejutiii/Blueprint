@@ -9,11 +9,17 @@ FUTURE EXTENSIONS
    The LLMClient already has a `tier` parameter placeholder for this.
 
 2. Neural embeddings for the Retrieval Agent
-   Currently: TF-IDF cosine similarity computed locally (no extra API calls, works well at project scale).
-   Future: replace with provider-specific embedding APIs for better semantic retrieval —
-   Gemini: text-embedding-004, OpenAI: text-embedding-3-small.
-   The ADR type already has an `embedding: number[]` field reserved for this.
-   Anthropic and Groq don't offer embedding APIs — would need a fallback strategy.
+   DONE (superseded this note): RetrievalAgent now blends TF-IDF cosine similarity with
+   local sentence embeddings (Xenova/all-MiniLM-L6-v2, 384-dim, run in-process via
+   @huggingface/transformers / ONNX — no API key, no network call per query). Falls back
+   to TF-IDF-only if the local model fails to load. Embeddings are cached per ADR in
+   .blueprint/adr-index.json (ADR.embedding) so they're only computed once.
+   Possible future: swap the local model for Gemini's text-embedding-004 API for
+   potentially higher-quality semantic retrieval. Trade-off to weigh before switching:
+   loses offline capability and adds a per-query network call + API cost, and ties
+   retrieval quality to whichever provider the developer configured (Anthropic and Groq
+   don't offer embedding APIs, so this would need a fallback to the local model anyway
+   for those providers).
 
 3. ARCH.md as a living document
    Currently: ARCH.md is written once on init and updated only when a new component is

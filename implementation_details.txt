@@ -187,8 +187,8 @@ FILES
   getAll(): reads full index, returns adrs array
   getById(id): linear scan of index
   update(id, changes): merges changes, rewrites .md file and index
-  storeEmbedding(id, embedding[]): calls update — reserved for future
-    neural embedding upgrade (ADR.embedding field already exists in types)
+  storeEmbedding(id, embedding[]): calls update — used by RetrievalAgent to
+    cache each ADR's local sentence embedding after first computation
 
   ADR filename format: adrFilename() in adrPrompts.ts
     — lowercases title, strips non-alphanumeric, replaces spaces with hyphens,
@@ -327,15 +327,22 @@ FILES
 
 --- RetrievalAgent ---
 
-  TF-IDF cosine similarity implemented entirely in TypeScript (no npm deps).
-  Avoids heavy ML libraries to keep bundle size small for VSCode context.
+  Hybrid ranking: TF-IDF cosine similarity (implemented entirely in
+  TypeScript, no deps) blended 50/50 with local sentence-embedding cosine
+  similarity (src/embeddings/EmbeddingService.ts — Xenova/all-MiniLM-L6-v2
+  via @huggingface/transformers, ONNX runtime, in-process, no API key).
+  Falls back to TF-IDF-only if the local embedding model fails to load.
 
   retrieve(query, adrs, blueprint, topK=5):
     — returns adrs unchanged if count <= topK
     — builds corpus: all ADR texts + query
     — computes smoothed IDF: log((N+1)/(df+1))+1  (prevents division by zero)
     — computes TF-IDF vector for each ADR and the query (L2-normalised)
-    — cosine similarity = dot product (vectors already normalised)
+    — lexical score = dot product (vectors already normalised)
+    — if the local embedding model is available: blends
+      score = 0.5*lexical + 0.5*semantic (cosine of query/ADR embeddings)
+    — embeddings are cached per-ADR via AdrStore.storeEmbedding() so repeat
+      retrievals only embed new/changed ADRs
     — applies +0.15 boost when both ADR text and query mention the same
       component name (min 3 chars)
     — returns top-K sorted by score
@@ -705,10 +712,13 @@ FUTURE EXTENSIONS (see future_extensions.txt)
      LLMClient already structured to support this.
 
   2. Neural embeddings for Retrieval Agent
-     Current: TF-IDF cosine similarity (no API calls, fast, good at project scale).
-     Future: Gemini text-embedding-004 or OpenAI text-embedding-3-small for
-     better semantic retrieval.
-     ADR.embedding field already reserved in the type definition.
+     DONE: RetrievalAgent blends TF-IDF with local sentence embeddings
+     (Xenova/all-MiniLM-L6-v2, in-process ONNX, no API calls) — see above.
+     Possible future: swap the local model for Gemini's text-embedding-004
+     API for potentially higher-quality semantic retrieval, at the cost of
+     losing offline capability and adding a per-query network call/cost.
+     Anthropic and Groq don't offer embedding APIs, so the local model would
+     still be needed as a fallback for those providers.
 
 ================================================================================
 BUILD & RUN

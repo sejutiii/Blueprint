@@ -98,6 +98,26 @@
     }
     .suggestion-label { font-weight: 600; font-size: 10px; opacity: 0.7; display: block; margin-bottom: 3px; }
 
+    .retrieved-adrs { margin-bottom: 22px; }
+    .retrieved-adrs h3 { margin-bottom: 4px; }
+    .retrieved-adrs .subtitle { margin-bottom: 10px; }
+    .adr-item {
+      display: flex; align-items: center; gap: 8px;
+      border-radius: 4px; border: 1px solid var(--vscode-panel-border, var(--vscode-input-border));
+      background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+      padding: 7px 10px; margin-bottom: 6px; font-size: 12px;
+    }
+    .adr-item .adr-id { font-family: var(--vscode-editor-font-family); font-size: 11px; opacity: 0.6; white-space: nowrap; }
+    .adr-item .adr-title { flex: 1; }
+    .adr-item .btn-open {
+      padding: 2px 9px; border: 1px solid var(--vscode-button-border, var(--vscode-input-border));
+      border-radius: 3px; background: transparent;
+      color: var(--vscode-foreground); font-family: inherit; font-size: 11px;
+      cursor: pointer; white-space: nowrap;
+    }
+    .adr-item .btn-open:hover { background: var(--vscode-list-hoverBackground); }
+    .adr-empty { font-size: 12px; color: var(--vscode-descriptionForeground); font-style: italic; }
+
     .error-box {
       background: var(--vscode-inputValidation-errorBackground);
       border: 1px solid var(--vscode-inputValidation-errorBorder);
@@ -139,6 +159,13 @@
       <p>Checking against your architecture…</p>
       <p style="margin-top:5px;font-size:11px;opacity:0.6">Comparing your intent against constraints and ADRs</p>
     </div>
+  </div>
+
+  <!-- Retrieved ADRs (shown alongside either result below, regardless of conflicts) -->
+  <div id="retrieved-adrs" class="retrieved-adrs hidden">
+    <h3>ADRs Considered</h3>
+    <p class="subtitle">The retrieval system judged these ADRs most relevant to your prompt.</p>
+    <div id="retrieved-adrs-list"></div>
   </div>
 
   <!-- Clean -->
@@ -190,6 +217,41 @@
     return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
+  let retrievedAdrMap = {};
+
+  function buildAdrItemHtml(a) {
+    return `<div class="adr-item">
+      <span class="adr-id">ADR-${esc(a.id)}</span>
+      <span class="adr-title">${esc(a.title)}</span>
+      <button class="btn-open" data-adr-id="${esc(a.id)}">Open</button>
+    </div>`;
+  }
+
+  function renderRetrievedAdrs(adrs) {
+    const panel = document.getElementById('retrieved-adrs');
+    const list  = document.getElementById('retrieved-adrs-list');
+
+    retrievedAdrMap = {};
+    (adrs || []).forEach(a => { retrievedAdrMap[a.id] = a; });
+
+    list.innerHTML = adrs && adrs.length
+      ? adrs.map(buildAdrItemHtml).join('')
+      : '<p class="adr-empty">No ADRs were found to be relevant to this prompt.</p>';
+
+    list.querySelectorAll('.btn-open').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const adr = retrievedAdrMap[btn.dataset.adrId];
+        if (adr) { vscode.postMessage({ command: 'openAdr', adr }); }
+      });
+    });
+
+    panel.classList.remove('hidden');
+  }
+
+  function hideRetrievedAdrs() {
+    document.getElementById('retrieved-adrs').classList.add('hidden');
+  }
+
   function buildConflictHtml(c) {
     const sev = (c.severity || 'medium').toLowerCase();
     const badge = sev === 'high' ? 'badge-high' : sev === 'low' ? 'badge-low' : 'badge-medium';
@@ -219,6 +281,7 @@
 
   function goBackToInput() {
     document.getElementById('btn-check').disabled = false;
+    hideRetrievedAdrs();
     showScreen('screen-input');
     document.getElementById('prompt-input').focus();
   }
@@ -240,11 +303,13 @@
     switch (msg.command) {
 
       case 'checking':
+        hideRetrievedAdrs();
         showScreen('screen-checking');
         break;
 
       case 'result': {
-        const { result } = msg;
+        const { result, retrievedAdrs } = msg;
+        renderRetrievedAdrs(retrievedAdrs);
         if (!result.hasConflicts || !result.conflicts?.length) {
           showScreen('screen-clean');
         } else {
@@ -258,6 +323,7 @@
       }
 
       case 'error':
+        hideRetrievedAdrs();
         document.getElementById('error-message').textContent = msg.message;
         document.getElementById('btn-check').disabled = false;
         showScreen('screen-error');

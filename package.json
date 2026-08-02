@@ -3,18 +3,23 @@
   "displayName": "BluePrint",
   "description": "Architecture-aware AI-assisted development with persistent architectural knowledge",
   "version": "0.1.0",
+  "publisher": "blueprint-dev",
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Other"],
-  "activationEvents": ["onStartupFinished"],
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "blueprint.init",
         "title": "BluePrint: Initialize Project",
-        "icon": "$(blueprint)"
+        "icon": "$(symbol-structure)"
       },
       {
         "command": "blueprint.openHub",
@@ -111,12 +116,15 @@
     "lint": "eslint src --ext ts"
   },
   "devDependencies": {
-    "@types/vscode": "^1.85.0",
     "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
     "esbuild": "^0.20.0",
     "eslint": "^8.0.0",
     "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.2.0"
   }
 }

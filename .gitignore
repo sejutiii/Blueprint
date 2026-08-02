@@ -9,3 +9,4 @@ out/
 .blueprint/
 docs/adr/
 docs/ARCH.md
+.env
