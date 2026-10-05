@@ -1,5 +1,26 @@
 # BluePrint — Completion Tasks
 
+## ▶ Resume here (paused 2026-10-05)
+
+**State.** All work is committed on branch `complete-srs` (`main` is untouched); the only untracked files are the `test/` fixture projects. `npm test` (104 tests) and `npm run typecheck` pass; `npm run build` and `npm run package` work. Phases 1–4 are done except the items below.
+
+**Next steps, in order**
+1. **Run the manual checklist** in [docs/TESTING.md](docs/TESTING.md) in the Extension Development Host (F5) against the projects in `test/`. *Nothing has been run inside VS Code yet* — expect a few UI fixes. Fix whatever it finds first.
+2. **Small items:** B15 (ESLint config), P3 (gitignore `test/`), E6 (settings — present a plan first).
+3. **E5** non-git diff fallback — present a plan first.
+4. **P1** README / LICENSE / `repository` / icon — **open question: which license?** (MIT suggested). Then drop the `--allow-missing-repository --skip-license` flags in `scripts/package.js` (marked TODO).
+5. **P2** update the SRS where behaviour deliberately changed (D1–D8 below; T34 and T49 in particular) and write the project's own ARCH.md.
+
+**Known unverified / caveats**
+- Linux and macOS VSIXs build but were never run; only Windows x64 embeddings were verified (from the unpacked VSIX).
+- "Regenerate ARCH.md from codebase" has not been tried against a real LLM.
+- Rotate the dev API key in `.env` if any build or VSIX from before 2026-10-05 was shared.
+- Minor: a one-line Python `def f(): pass` keeps `pass` in its signature; an ADR slug cut at 50 chars can end in `-`. Both harmless; changing the slug would orphan existing ADR files.
+
+**Working agreement.** Before each feature: explain the current behaviour and the planned changes, wait for approval, then build → test → commit on `complete-srs`, and record decisions in the Decisions list below.
+
+---
+
 Gap analysis of the SRS (Aug 2026) against the code as of 2026-10-05. `tsc` and the esbuild build pass; the core agents, hub, setup wizard, pre-check, compliance panel and audit trail work. The items below are what's missing or wrong.
 
 Legend: `[ ]` todo · `[x]` done · **SRS** = section/test-case it satisfies.
