@@ -231,7 +231,10 @@
     "watch": "node esbuild.js --watch",
     "lint": "eslint src --ext ts",
     "package": "node scripts/package.js",
-    "package:all": "node scripts/package.js --all"
+    "package:all": "node scripts/package.js --all",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p . && tsc -p tests"
   },
   "devDependencies": {
     "@types/markdown-it": "^14.2.0",
@@ -242,7 +245,8 @@
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.20.0",
     "eslint": "^8.0.0",
-    "typescript": "^5.3.0"
+    "typescript": "^5.3.0",
+    "vitest": "^2.1.9"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",

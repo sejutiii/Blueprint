@@ -54,9 +54,9 @@ Legend: `[ ]` todo · `[x]` done · **SRS** = section/test-case it satisfies.
 
 ## Phase 4 — Tests (SRS §5, T1–T53)
 
-- [ ] **T-infra** Add vitest + a `vscode` module stub; `npm test` script.
-- [ ] **T-unit** Automated tests for the pure logic: DiffSummarizer (T21–T25), RetrievalAgent (T26–T31), agent parsing/safe defaults (T14, T17, T18, T35), `adrFilename`/ID padding (T41–T42), LLMClient routing with mocked `fetch` (T7–T10), RBAC resolution, ARCH.md patching, history.
-- [ ] **T-manual** Checklist for the VS Code–dependent cases (T1–T4, T36, T39–T40, T44, T47–T53), run in the Extension Development Host against `test/`.
+- [x] **T-infra** vitest + a file-system-backed `vscode` stand-in (`tests/mocks/vscode.ts`); `npm test`, `npm run typecheck`.
+- [x] **T-unit** 104 tests across agents, diff/Tree-sitter, retrieval, ARCH.md patching/history/viewer, ADR storage, roles + approval queue, wizard session, LLM routing/retries/secrets, codebase snapshot. Mutation-checked.
+- [x] **T-manual** `docs/TESTING.md`: T1–T53 mapped to automated tests or manual steps, plus an Extension Development Host checklist. *(Checklist not yet run.)*
 
 ## Phase 5 — Packaging & docs
 

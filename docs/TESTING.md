@@ -1,0 +1,113 @@
+# BluePrint — Test Plan Status
+
+How each test case from the SRS (§5, T1–T53) is covered. **Auto** means it runs in `npm test` (vitest, plain Node, a stand-in `vscode` module backed by real temp folders). **Manual** means it needs the VS Code UI or a real LLM; run those in the Extension Development Host (F5) using the projects in `test/`.
+
+```
+npm test            # 104 unit tests, ~3 s
+npm run typecheck   # extension + test sources
+```
+
+## Coverage by SRS test case
+
+| ID | Case | How | Where / notes |
+|---|---|---|---|
+| T1 | Extension activates on startup | Manual | |
+| T2 | Sidebar hidden before init | Manual | |
+| T3 | Sidebar appears after init | Manual | |
+| T4 | Status bar state transitions | Manual | Idle click now opens the Hub; Violation rebinds to Review |
+| T5 | Save/retrieve provider credentials | Auto | `llm.test.ts` |
+| T6 | No provider blocks a workflow | Auto + Manual | `fromSecrets` → null in `llm.test.ts`; error message in UI is manual |
+| T7 | Gemini routing | Auto | `llm.test.ts` — key now sent in `x-goog-api-key`, not the URL |
+| T8 | Anthropic routing | Auto | `llm.test.ts` |
+| T9 | OpenAI-compatible routing | Auto | `llm.test.ts` (OpenAI, Groq, OpenRouter) |
+| T10 | Non-OK response → actionable error | Auto | `llm.test.ts`, plus 429/5xx retry and wizard key validation |
+| T11 | Architecture from a clear description | Auto (parsing) + Manual (LLM quality) | `agents.test.ts` |
+| T12 | No hallucination on a vague description | Manual | Depends on the model; prompt rule in `archPrompts.ts` |
+| T13 | Blueprint persisted correctly | Auto | `archmd.test.ts` |
+| T14 | Malformed JSON on generation | Auto | `agents.test.ts` |
+| T15 | Re-running init | Auto + Manual | Snapshot to history in `archmd.test.ts`; confirm dialog is manual |
+| T16 | Concrete answer → draft ADR | Auto | `agents.test.ts` |
+| T17 | Tentative answer → no ADR | Auto | `agents.test.ts` |
+| T18 | Empty answer skips the LLM | Auto | `agents.test.ts` |
+| T19 | Skip button | Auto + Manual | `ElicitationSession.skip` in `decisions.test.ts` |
+| T20 | All questions, mixed answers | Manual | Now up to 10 questions (5 topics + follow-ups, D5) |
+| T21 | Structural signals from a diff | Auto | `diff.test.ts` — Tree-sitter against a real git repo, and regex fallback |
+| T22 | package.json dependencies | Auto | `diff.test.ts` — also requirements.txt, go.mod; scripts/comma-only changes ignored |
+| T23 | Signal list truncation | Auto | `diff.test.ts` |
+| T24 | Large diff truncation | Auto | `diff.test.ts` |
+| T25 | No git repo / no diff | Auto + Manual | `diff.test.ts`; "No uncommitted changes" screen is manual |
+| T26 | Short-circuit when ADRs ≤ top-K | Auto | `retrieval.test.ts` |
+| T27 | Top-K ranking | Auto | `retrieval.test.ts` |
+| T28 | Component-name boost | Auto | `retrieval.test.ts` |
+| T29 | Embedding cache reuse | Auto | `retrieval.test.ts` |
+| T30 | Fallback to TF-IDF | Auto | `retrieval.test.ts` |
+| T31 | Query from diff | Auto | `retrieval.test.ts` |
+| T32 | Diff violates a locked ADR | Auto (parsing) + Manual (LLM judgment) | `agents.test.ts` |
+| T33 | Minor convention deviation | Manual | LLM judgment |
+| T34 | Clean diff → Pass 2 | **Changed (D1)** | Both passes now run in parallel on every review |
+| T35 | Unparseable compliance output | Auto | `agents.test.ts` |
+| T36 | Save decision as ADR | Auto + Manual | `decisions.test.ts` (one ADR per violation, D2); panel is manual |
+| T37 | New component detected | Auto (parsing) + Manual | `agents.test.ts` — now a list of extensions (D2) |
+| T38 | Route/method addition not flagged | Manual | LLM judgment |
+| T39 | Extension confirmed | Auto + Manual | `decisions.test.ts` (ARCH.md row added on approval) |
+| T40 | Extension dismissed | Manual | |
+| T41 | Sequential padded IDs | Auto | `decisions.test.ts`, including concurrent creates |
+| T42 | Filename slugification | Auto | `decisions.test.ts` |
+| T43 | Update rewrites index + markdown | Auto | `decisions.test.ts`, including rename on title change |
+| T44 | Click-to-open from sidebar | Manual | |
+| T45 | Intent conflicts with a constraint | Auto (parsing) + Manual | `agents.test.ts`, incl. suggested revised prompt |
+| T46 | Intent with no conflicts | Auto (parsing) + Manual | `agents.test.ts` |
+| T47 | Pre-check blocked when uninitialized | Manual | |
+| T48 | Ctrl+Enter triggers check | Manual | |
+| T49 | Check another prompt | Manual | **Changed**: "Revise prompt" keeps the text, "Check another prompt" clears it |
+| T50 | Singleton panels | Manual | |
+| T51 | Audit trail empty state | Manual | |
+| T52 | Audit trail sorted newest first | Manual | Sorting is done by the host before sending |
+| T53 | Ready-signal handshake | Manual | |
+
+## Beyond the SRS test plan
+
+| Area | Auto coverage |
+|---|---|
+| Role lookup, approval queue (SRS 3.2.5) | `decisions.test.ts`: no manifest ⇒ Architect; Developer proposals wait; only Architects approve; rejection needs reasoning and never touches ARCH.md |
+| Non-destructive ARCH.md patching (SRS 2.2) | `archmd.test.ts`: manual edits preserved byte-for-byte, widened tables, CRLF, duplicates are no-ops |
+| ARCH.md history and revert (SRS 2.1) | `archmd.test.ts`: snapshot before each change, revert is itself reversible |
+| Viewer highlights (SRS 3.1, D6) | `archmd.test.ts`: last 5 changes, whole-document changes |
+| Wizard follow-ups (D5) | `decisions.test.ts`, `agents.test.ts` |
+| Pre-check context block (SRS 3.3.1 step 5) | `retrieval.test.ts` |
+| Regenerate from codebase (R4) | `snapshot.test.ts`, `agents.test.ts` (constraints never dropped) |
+| Reviewable files | `diff.test.ts`: `.blueprint/`, `docs/adr/`, `docs/ARCH.md`, lockfiles excluded |
+
+## Manual checklist (Extension Development Host)
+
+Run with F5, then open one of the projects in `test/`. A free Gemini or Groq key is enough.
+
+**Setup**
+- [ ] A fresh folder: status bar shows "BluePrint: Not initialized"; the sidebar views are hidden (T1, T2).
+- [ ] Initialize: an invalid key shows "…rejected this API key"; a valid key moves on; "Get a key ↗" opens the provider's page.
+- [ ] Generate the architecture; the sidebar appears (T3).
+- [ ] Answer a concrete constraint ("We use PostgreSQL"): a draft appears, editable, and a follow-up question comes next. Save with an empty title → inline error.
+- [ ] Re-run Initialize: a confirmation dialog appears; after confirming, Revert ARCH.md lists the old version (T15).
+
+**Compliance review**
+- [ ] Add a file that contradicts an ADR (e.g. a MongoDB client) and a new self-contained module, then Review: violations and new components appear together (D1).
+- [ ] Resolve two violations separately with "Update Architecture": two ADRs (D2). "Modify Code" records none.
+- [ ] Register one component, dismiss another (T39, T40). The ARCH.md viewer highlights Components.
+- [ ] Create a new file: the review prompt appears once even for several files (debounced).
+
+**Roles**
+- [ ] BluePrint: Configure Roles → put a different email under `architects`. Your next decision shows "pending approval" in the sidebar and status bar; ARCH.md is unchanged.
+- [ ] Restore your email as Architect: approve and reject from the sidebar's inline buttons; rejection requires a reason.
+- [ ] Regenerate ARCH.md as a non-Architect → refused with an explanation.
+
+**Pre-check**
+- [ ] Prompt that conflicts with a constraint: concerns + suggested revision; "Use this prompt" fills the box (T45).
+- [ ] "Copy prompt with context" → paste: prompt + selected ADRs + constraints.
+- [ ] Ctrl+Enter checks (T48); "Revise prompt" keeps text, "Check another prompt" clears it (T49).
+
+**Viewers**
+- [ ] Audit trail: Decisions newest first, search by file name, Activity filters; it updates while open (T50–T53).
+- [ ] ARCH.md viewer: recent sections highlighted; Edit source / Revert / Regenerate; edits to ARCH.md re-render.
+
+**Packaging**
+- [ ] `npm run package`, then install `out/blueprint-<platform>.vsix` in a normal VS Code window; the first pre-check downloads the model once (~23 MB), later ones work offline.
