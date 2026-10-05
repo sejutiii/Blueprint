@@ -230,7 +230,7 @@
         "blueprint.model.groq": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Model to use with Groq. Leave empty for the built-in default (`llama-3.3-70b-versatile`). Set this if the default is retired or you want a different model."
+          "markdownDescription": "Model to use with Groq. Leave empty for the built-in default (`openai/gpt-oss-120b`). Set this if the default is retired or you want a different model."
         },
         "blueprint.model.openrouter": {
           "type": "string",

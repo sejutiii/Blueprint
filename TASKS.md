@@ -7,7 +7,7 @@
 **Next steps, in order**
 1. **UI fixes** — see "Phase 3b — UI review" below. U1–U6 are plain fixes; U7–U10 have a recommendation that still needs the developer's OK; U16 is an open question. U11–U15 (roles) are done. Done first so the manual checklist tests the updated UI.
 2. **Run the manual checklist** in [docs/TESTING.md](docs/TESTING.md) in the Extension Development Host (F5) against the projects in `test/`. *Nothing has been run inside VS Code yet* — expect a few more UI fixes. Fix whatever it finds.
-3. **Small items:** B15 (ESLint config), P3 (gitignore `test/`), E6 (settings — present a plan first).
+3. **Small items:** B15 (ESLint config), P3 (gitignore `test/`), E6 (remaining setting: top-K — present a plan first).
 4. **E5** non-git diff fallback — present a plan first.
 5. **P1** README / LICENSE / `repository` / icon — **open question: which license?** (MIT suggested). Then drop the `--allow-missing-repository --skip-license` flags in `scripts/package.js` (marked TODO).
 6. **P2** update the SRS where behaviour deliberately changed (D1–D8 below; T34 and T49 in particular) and write the project's own ARCH.md.
@@ -16,7 +16,7 @@
 - Linux and macOS VSIXs build but were never run; only Windows x64 embeddings were verified (from the unpacked VSIX).
 - "Regenerate ARCH.md from codebase" has not been tried against a real LLM.
 - Rotate the dev API key in `.env` if any build or VSIX from before 2026-10-05 was shared.
-- The current dev Gemini key (2026-10-06) is valid but its Google Cloud project gets 403 "Your project has been denied access" on every model, so no live LLM run has been done with `gemini-flash-latest` yet. Needs a key from another project (or a Groq key) before the manual checklist.
+- The current dev Gemini key (2026-10-06) is valid but its Google Cloud project gets 403 "Your project has been denied access" on every model, so `gemini-flash-latest` hasn't had a live run. `.env` now uses a Groq key, and every agent passed live on `openai/gpt-oss-120b`.
 - Minor: a one-line Python `def f(): pass` keeps `pass` in its signature; an ADR slug cut at 50 chars can end in `-`. Both harmless; changing the slug would orphan existing ADR files.
 
 **Working agreement.** Before each feature: explain the current behaviour and the planned changes, wait for approval, then build → test → commit on `complete-srs`, and record decisions in the Decisions list below.
@@ -37,6 +37,7 @@ Legend: `[ ]` todo · `[x]` done · **SRS** = section/test-case it satisfies.
 - **D7 — Bring your own key in public builds.** The built-in default key exists only in local dev builds (from `.env`).
 - **D8 — Packaging:** one VSIX per platform + universal fallback; embedding model downloaded on first use (not bundled).
 - **D9 — Roles are set up during initialization** (new wizard step when there is no `roles.json`; an existing one is used as is). Once Architects are named, only they can initialize/re-initialize or change roles.
+- **D10 — No light/heavy model tiers** (drops future_extensions #1): every task is one API call to the configured model; the per-provider model setting covers choosing a cheaper or stronger model.
 - **D4 — Orchestrator split kept** (`src/orchestrator/Orchestrator.ts`): pipelines live there, `extension.ts` is UI only.
 
 ## Phase 1 — Bugs & correctness (fix before adding features)
@@ -74,8 +75,8 @@ Legend: `[ ]` todo · `[x]` done · **SRS** = section/test-case it satisfies.
 - [x] **E3 ARCH.md Viewer** *(SRS 3.1)*: rendered ARCH.md webview; sections touched by the last 5 recorded changes are highlighted with when/why; Edit source / Revert / Regenerate; live refresh.
 - [x] **E4 ADR Browser search** *(SRS 3.1)*: search/filter command + status grouping that includes pending/rejected.
 - [ ] **E5 Non-git diff fallback** *(future_extensions #4)*: file-manifest snapshot on init; diff against it when the workspace isn't a git repo.
-- [ ] **E6 Settings**: `contributes.configuration` for provider/model override, top-K, auto-review on new file, light/heavy tier model (the `tier` placeholder in future_extensions #1). *Done so far:* auto-review on new file; per-provider model override `blueprint.model.<provider>` (2026-10-06). *Left:* top-K, light/heavy tier.
-- [x] **M1 Retired default models** (2026-10-06): Google shut down `gemini-2.0-flash` (and `gemini-2.5-*` for new users); OpenRouter's `google/gemini-2.0-flash-exp:free` is gone. Defaults are now the aliases `gemini-flash-latest` and `openrouter/free`; a 404 names the `blueprint.model.<provider>` setting. Groq/Anthropic/OpenAI defaults not verified (no keys). The wizard now tells a blocked project ("denied access") apart from a bad key.
+- [ ] **E6 Settings**: `contributes.configuration` for provider/model override, top-K, auto-review on new file. *Done so far:* auto-review on new file; per-provider model override `blueprint.model.<provider>` (2026-10-06). *Left:* top-K. ~~Light/heavy tier~~ dropped (D10).
+- [x] **M1 Retired default models** (2026-10-06): Google shut down `gemini-2.0-flash` (and `gemini-2.5-*` for new users); OpenRouter's `google/gemini-2.0-flash-exp:free` is gone. Defaults are now the aliases `gemini-flash-latest` and `openrouter/free`; Groq (no alias; `llama-3.3-70b-versatile` retired) uses `openai/gpt-oss-120b`, chosen after a live run of every agent on all Groq chat models. A 404 names the `blueprint.model.<provider>` setting. Anthropic/OpenAI defaults not verified (no keys). The wizard now tells a blocked project ("denied access") apart from a bad key.
 
 ## Phase 3b — UI review (2026-10-06, from reading the code; not yet run in VS Code)
 

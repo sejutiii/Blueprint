@@ -26,7 +26,7 @@ export const PROVIDER_KEY_PAGES: Record<Provider, { url: string; free: boolean }
 // overridden per provider with the `blueprint.model.<provider>` setting.
 export const DEFAULT_MODELS: Record<Provider, string> = {
   gemini: "gemini-flash-latest",
-  groq: "llama-3.3-70b-versatile",
+  groq: "openai/gpt-oss-120b", // no alias on Groq; llama-3.3-70b-versatile was retired
   openrouter: "openrouter/free", // routes to whichever free models OpenRouter currently offers
   anthropic: "claude-sonnet-4-6",
   openai: "gpt-4o-mini",
