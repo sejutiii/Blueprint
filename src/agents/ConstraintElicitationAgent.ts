@@ -6,6 +6,7 @@ import {
   ConstraintAnalysisResult,
   QuestionStep,
 } from "../prompts/constraintPrompts";
+import { parseJsonObject, str } from "../util/llmJson";
 
 export class ConstraintElicitationAgent {
   constructor(private readonly llm: LLMClient) {}
@@ -16,7 +17,7 @@ export class ConstraintElicitationAgent {
 
   async analyzeAnswer(question: QuestionStep, answer: string): Promise<ConstraintAnalysisResult> {
     if (!answer.trim()) {
-      return { hasConstraint: false };
+      return { hasConstraint: false }; // no LLM call for empty answers (T18)
     }
 
     const raw = await this.llm.complete(
@@ -24,18 +25,25 @@ export class ConstraintElicitationAgent {
       buildConstraintAnalysisPrompt(question.question, answer)
     );
 
-    return this.parseResponse(raw);
+    return ConstraintElicitationAgent.parseResponse(raw);
   }
 
-  private parseResponse(raw: string): ConstraintAnalysisResult {
-    const cleaned = raw
-      .replace(/^```(?:json)?\s*/m, "")
-      .replace(/\s*```\s*$/m, "")
-      .trim();
-    try {
-      return JSON.parse(cleaned) as ConstraintAnalysisResult;
-    } catch {
+  static parseResponse(raw: string): ConstraintAnalysisResult {
+    const obj = parseJsonObject(raw);
+    const draft = obj && obj.hasConstraint === true && obj.draft && typeof obj.draft === "object"
+      ? (obj.draft as Record<string, unknown>)
+      : null;
+    if (!draft || !str(draft.title).trim() || !str(draft.decision).trim()) {
       return { hasConstraint: false };
     }
+    return {
+      hasConstraint: true,
+      draft: {
+        title:        str(draft.title).trim(),
+        context:      str(draft.context),
+        decision:     str(draft.decision),
+        consequences: str(draft.consequences),
+      },
+    };
   }
 }

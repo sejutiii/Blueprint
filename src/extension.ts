@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import * as path from "path";
 import { BlueprintPanel } from "./ui/BlueprintPanel";
 import { AdrTreeProvider } from "./ui/AdrTreeProvider";
 import { AuditTrailTreeProvider } from "./ui/AuditTrailTreeProvider";
@@ -6,24 +7,41 @@ import { StatusBarManager } from "./ui/StatusBarManager";
 import { LLMClient, Provider, PROVIDER_LABELS } from "./llm/LLMClient";
 import { FileStore } from "./storage/FileStore";
 import { AdrStore } from "./storage/AdrStore";
-import { ArchitectureAgent } from "./agents/ArchitectureAgent";
+import { AuditLog } from "./storage/AuditLog";
+import { AccessControl } from "./access/AccessControl";
+import { Orchestrator, BlueprintError, ReviewMode } from "./orchestrator/Orchestrator";
 import { ConstraintElicitationAgent } from "./agents/ConstraintElicitationAgent";
-import { ComplianceAgent } from "./agents/ComplianceAgent";
-import { DiffSummarizer } from "./agents/DiffSummarizer";
-import { RetrievalAgent } from "./agents/RetrievalAgent";
 import { ConstraintDraft } from "./prompts/constraintPrompts";
 import { adrFilename } from "./prompts/adrPrompts";
-import { AdrStatus, ViolationDetail, ExtensionDetail, ADR, ArchBlueprint, DiffSummary } from "./types";
-import { PreCheckAgent } from "./agents/PreCheckAgent";
+import { ViolationDetail, ExtensionDetail, ADR, DiffSummary } from "./types";
+import { configureGrammarDir } from "./parsing/TreeSitterExtractor";
 
 let statusBar: StatusBarManager;
 let adrTreeProvider: AdrTreeProvider;
 let auditTrailProvider: AuditTrailTreeProvider;
+let orchestrator: Orchestrator;
+
+// Last diff that was reviewed — decisions recorded in the compliance panel link back to these files.
+let lastReviewedFiles: string[] = [];
 
 export function activate(context: vscode.ExtensionContext): void {
+  configureGrammarDir(path.join(context.extensionPath, "node_modules", "tree-sitter-wasms", "out"));
+
   adrTreeProvider    = new AdrTreeProvider();
   auditTrailProvider = new AuditTrailTreeProvider();
   statusBar          = new StatusBarManager();
+
+  orchestrator = new Orchestrator(context.secrets, {
+    onState: (state) => {
+      switch (state) {
+        case "checking":  statusBar.setChecking();       break;
+        case "ok":        statusBar.setOk();             break;
+        case "violation": statusBar.setViolationFound(); break;
+        case "idle":      statusBar.setIdle();           break;
+      }
+    },
+    onDataChanged: () => { void refreshProviders(); },
+  });
 
   context.subscriptions.push(
     vscode.window.registerTreeDataProvider("blueprint.adrBrowser", adrTreeProvider),
@@ -33,79 +51,80 @@ export function activate(context: vscode.ExtensionContext): void {
 
   checkInitialized().catch(console.error);
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand("blueprint.init", () =>
-      handleInit(context).catch((err) =>
-        vscode.window.showErrorMessage(`BluePrint: ${String(err)}`)
+  const register = (command: string, run: (...args: any[]) => unknown) =>
+    context.subscriptions.push(
+      vscode.commands.registerCommand(command, (...args: any[]) =>
+        Promise.resolve(run(...args)).catch(reportError)
       )
-    ),
+    );
 
-    vscode.commands.registerCommand("blueprint.openHub", () =>
-      handleHub(context).catch((err) =>
-        vscode.window.showErrorMessage(`BluePrint: ${String(err)}`)
-      )
-    ),
+  register("blueprint.init",           () => handleInit(context));
+  register("blueprint.openHub",        () => handleHub(context));
+  register("blueprint.reviewChange",   () => handleReview(context, "full"));
+  register("blueprint.preCheck",       () => handlePreCheck(context));
+  register("blueprint.viewArch",       () => openArchMd());
+  register("blueprint.openAdrBrowser", () => vscode.commands.executeCommand("workbench.view.extension.blueprint-explorer"));
+  register("blueprint.viewAuditTrail", () => handleViewAuditTrail(context));
+  register("blueprint.openAdr",        (adr: ADR) => openAdrFile(adr));
+  register("blueprint.approveAdr",     (arg?: unknown) => handleApprove(arg));
+  register("blueprint.rejectAdr",      (arg?: unknown) => handleReject(arg));
+  register("blueprint.searchAdrs",     () => handleSearchAdrs());
+  register("blueprint.filterAdrs",     () => handleFilterAdrs());
+  register("blueprint.configureRoles", () => handleConfigureRoles());
+  register("blueprint.revertArch",     () => handleRevertArch());
 
-    vscode.commands.registerCommand("blueprint.reviewChange", () =>
-      handleReviewChange(context).catch((err) =>
-        vscode.window.showErrorMessage(`BluePrint: ${String(err)}`)
-      )
-    ),
+  registerAutoReview(context);
+}
 
-    vscode.commands.registerCommand("blueprint.preCheck", () =>
-      handlePreCheck(context).catch((err) =>
-        vscode.window.showErrorMessage(`BluePrint: ${String(err)}`)
-      )
-    ),
+function reportError(err: unknown): void {
+  const message = err instanceof Error ? err.message : String(err);
+  void vscode.window.showErrorMessage(err instanceof BlueprintError ? message : `BluePrint: ${message}`);
+}
 
-    vscode.commands.registerCommand("blueprint.viewArch", () => openArchMd()),
-
-    vscode.commands.registerCommand("blueprint.openAdrBrowser", () =>
-      vscode.commands.executeCommand("workbench.view.extension.blueprint-explorer")
-    ),
-
-    vscode.commands.registerCommand("blueprint.viewAuditTrail", () =>
-      handleViewAuditTrail(context).catch((err) =>
-        vscode.window.showErrorMessage(`BluePrint: ${String(err)}`)
-      )
-    ),
-
-    vscode.commands.registerCommand("blueprint.openAdr", async (adr: ADR) => {
-      await openAdrFile(adr);
-    })
-  );
+// New-file auto-trigger (SRS 3.1): debounced so creating several files at once asks once.
+function registerAutoReview(context: vscode.ExtensionContext): void {
+  const IGNORED = /(^|[\\/])(node_modules|\.git|\.blueprint|dist|out)([\\/]|$)|[\\/]docs[\\/](adr[\\/]|ARCH\.md$)/;
+  let pending: string[] = [];
+  let timer: ReturnType<typeof setTimeout> | undefined;
 
   context.subscriptions.push(
     vscode.workspace.onDidCreateFiles((event) => {
-      vscode.commands.executeCommand<boolean>("blueprint.initialized").then((initialized) => {
-        if (!initialized) { return; }
-        const names = event.files.map((f) => f.fsPath).join(", ");
-        vscode.window
-          .showInformationMessage(
-            "BluePrint: New file detected — review architectural impact?",
-            { detail: names },
-            "Review",
-            "Skip"
-          )
-          .then((choice) => {
-            if (choice === "Review") { handleReviewChange(context).catch(console.error); }
-          });
-      });
+      if (!vscode.workspace.getConfiguration("blueprint").get<boolean>("autoReviewOnNewFile", true)) { return; }
+      pending.push(...event.files.map((f) => f.fsPath).filter((p) => !IGNORED.test(p)));
+      if (!pending.length) { return; }
+
+      if (timer) { clearTimeout(timer); }
+      timer = setTimeout(async () => {
+        const files = [...new Set(pending)];
+        pending = [];
+        if (!(await orchestrator.isInitialized())) { return; }
+
+        const names = files.map((f) => vscode.workspace.asRelativePath(f)).slice(0, 5).join(", ")
+          + (files.length > 5 ? `, +${files.length - 5} more` : "");
+        const choice = await vscode.window.showInformationMessage(
+          "BluePrint: New file detected — review architectural impact?",
+          { detail: names },
+          "Review",
+          "Skip"
+        );
+        if (choice === "Review") { await handleReview(context, "full").catch(reportError); }
+      }, 1500);
     })
   );
 }
 
-// Refresh both sidebar tree views from the current ADR store
+// Refresh both sidebar tree views (and the pending-approval badge) from the ADR store
 async function refreshProviders(): Promise<void> {
   const adrStore = AdrStore.fromWorkspace();
   const adrs     = adrStore ? await adrStore.getAll() : [];
   adrTreeProvider.refresh(adrs);
   auditTrailProvider.refresh(adrs);
+  statusBar.setPending(adrs.filter((a) => a.status === "proposed").length);
+  statusBar.refreshIdle();
 }
 
 async function checkInitialized(): Promise<void> {
-  const store = FileStore.fromWorkspace();
-  if (store && await store.isInitialized()) {
+  if (await orchestrator.isInitialized()) {
     await vscode.commands.executeCommand("setContext", "blueprint.initialized", true);
     statusBar.setIdle();
     await refreshProviders();
@@ -114,11 +133,7 @@ async function checkInitialized(): Promise<void> {
   }
 }
 
-function sendNextQuestion(
-  panel: import("./ui/BlueprintPanel").BlueprintPanel,
-  agent: ConstraintElicitationAgent,
-  index: number
-): void {
+function sendNextQuestion(panel: BlueprintPanel, agent: ConstraintElicitationAgent, index: number): void {
   const questions = agent.getQuestions();
   const q = questions[index];
   panel.postMessage({
@@ -130,7 +145,19 @@ function sendNextQuestion(
   });
 }
 
+// ── Setup wizard ────────────────────────────────────────────────────────────
+
 async function handleInit(context: vscode.ExtensionContext): Promise<void> {
+  if (await orchestrator.isInitialized()) {
+    const choice = await vscode.window.showWarningMessage(
+      "BluePrint is already initialized in this project. Re-running setup regenerates ARCH.md " +
+      "(the current version is kept in .blueprint/history). Your ADRs are not deleted.",
+      { modal: true },
+      "Re-initialize"
+    );
+    if (choice !== "Re-initialize") { return; }
+  }
+
   const panel = BlueprintPanel.show("setup", context.extensionUri);
   await panel.loadMedia("setupWizard.html", { nonce: panel.nonce });
 
@@ -148,365 +175,200 @@ async function handleInit(context: vscode.ExtensionContext): Promise<void> {
   let constraintAgent: ConstraintElicitationAgent | null = null;
   let questionIndex = 0;
   let totalSaved    = 0;
+  let totalPending  = 0;
+
+  const advance = () => {
+    questionIndex += 1;
+    if (constraintAgent && questionIndex < constraintAgent.getQuestions().length) {
+      sendNextQuestion(panel, constraintAgent, questionIndex);
+    } else {
+      panel.postMessage({ command: "elicitationComplete", totalSaved, totalPending });
+    }
+  };
 
   panel.setMessageHandler(async (message) => {
-    switch (message.command) {
+    try {
+      switch (message.command) {
 
-      case "saveProvider": {
-        await LLMClient.saveToSecrets(
-          context.secrets,
-          message.provider as Provider,
-          message.apiKey as string
-        );
-        break;
-      }
+        case "saveProvider":
+          await LLMClient.saveToSecrets(context.secrets, message.provider as Provider, message.apiKey as string);
+          break;
 
-      case "useDefault": {
-        const applied = await LLMClient.useDefault(context.secrets);
-        if (!applied) {
-          panel.postMessage({ command: "error", message: "No default API key is configured." });
-        }
-        break;
-      }
-
-      case "generate": {
-        const llm = await LLMClient.fromSecrets(context.secrets);
-        if (!llm) {
-          panel.postMessage({ command: "error", message: "No LLM provider configured. Go back to step 1." });
-          return;
-        }
-        const store = FileStore.fromWorkspace();
-        if (!store) {
-          panel.postMessage({ command: "error", message: "No workspace folder is open. Please open a project folder first." });
-          return;
-        }
-        try {
-          panel.postMessage({ command: "generating" });
-          const blueprint = await new ArchitectureAgent(llm).generate(message.systemDescription as string);
-          await store.writeArchBlueprint(blueprint, message.systemName as string);
-          await vscode.commands.executeCommand("setContext", "blueprint.initialized", true);
-          statusBar.setOk();
-          await refreshProviders();
-          panel.postMessage({ command: "success", blueprint });
-        } catch (err) {
-          panel.postMessage({ command: "error", message: String(err) });
-        }
-        break;
-      }
-
-      case "startConstraints": {
-        const llm = await LLMClient.fromSecrets(context.secrets);
-        if (!llm) { panel.postMessage({ command: "error", message: "No LLM provider configured." }); return; }
-        constraintAgent = new ConstraintElicitationAgent(llm);
-        questionIndex   = 0;
-        totalSaved      = 0;
-        sendNextQuestion(panel, constraintAgent, questionIndex);
-        break;
-      }
-
-      case "submitAnswer": {
-        if (!constraintAgent) { return; }
-        const questions = constraintAgent.getQuestions();
-        const question  = questions[questionIndex];
-        panel.postMessage({ command: "analyzing" });
-        try {
-          const result = await constraintAgent.analyzeAnswer(question, message.answer as string);
-          if (result.hasConstraint && result.draft) {
-            panel.postMessage({
-              command: "showDraft",
-              draft:   result.draft,
-              index:   questionIndex,
-              total:   questions.length,
-            });
-          } else {
-            questionIndex += 1;
-            if (questionIndex < questions.length) {
-              sendNextQuestion(panel, constraintAgent, questionIndex);
-            } else {
-              panel.postMessage({ command: "elicitationComplete", totalSaved });
-            }
+        case "useDefault":
+          if (!(await LLMClient.useDefault(context.secrets))) {
+            panel.postMessage({ command: "error", message: "No default API key is configured." });
           }
-        } catch (err) {
-          panel.postMessage({ command: "error", message: String(err) });
-        }
-        break;
-      }
+          break;
 
-      case "skipQuestion": {
-        if (!constraintAgent) { return; }
-        questionIndex += 1;
-        const qs = constraintAgent.getQuestions();
-        if (questionIndex < qs.length) {
+        case "generate": {
+          panel.postMessage({ command: "generating" });
+          const blueprint = await orchestrator.generateArchitecture(
+            message.systemDescription as string,
+            message.systemName as string
+          );
+          await vscode.commands.executeCommand("setContext", "blueprint.initialized", true);
+          panel.postMessage({ command: "success", blueprint });
+          break;
+        }
+
+        case "startConstraints":
+          constraintAgent = await orchestrator.createConstraintAgent();
+          questionIndex   = 0;
+          totalSaved      = 0;
+          totalPending    = 0;
           sendNextQuestion(panel, constraintAgent, questionIndex);
-        } else {
-          panel.postMessage({ command: "elicitationComplete", totalSaved });
+          break;
+
+        case "submitAnswer": {
+          if (!constraintAgent) { return; }
+          const questions = constraintAgent.getQuestions();
+          panel.postMessage({ command: "analyzing" });
+          const result = await constraintAgent.analyzeAnswer(questions[questionIndex], message.answer as string);
+          if (result.hasConstraint && result.draft) {
+            panel.postMessage({ command: "showDraft", draft: result.draft, index: questionIndex, total: questions.length });
+          } else {
+            advance();
+          }
+          break;
         }
-        break;
-      }
 
-      case "saveDraft": {
-        const adrStore = AdrStore.fromWorkspace();
-        if (!adrStore) { return; }
-        const draft = message.draft as ConstraintDraft;
-        const saved = await adrStore.create({
-          title:        draft.title,
-          status:       "accepted" as AdrStatus,
-          context:      draft.context,
-          decision:     draft.decision,
-          consequences: draft.consequences,
-        });
-        totalSaved += 1;
-        await refreshProviders();
+        case "skipQuestion":
+        case "discardDraft":
+          if (constraintAgent) { advance(); }
+          break;
 
-        questionIndex += 1;
-        if (constraintAgent && questionIndex < constraintAgent.getQuestions().length) {
-          sendNextQuestion(panel, constraintAgent, questionIndex);
-        } else {
-          panel.postMessage({ command: "elicitationComplete", totalSaved });
+        case "saveDraft": {
+          const { adr, autoApproved } = await orchestrator.saveConstraintDraft(message.draft as ConstraintDraft);
+          totalSaved += 1;
+          if (!autoApproved) { totalPending += 1; }
+          void adr;
+          advance();
+          break;
         }
-        void saved;
-        break;
-      }
 
-      case "discardDraft": {
-        if (!constraintAgent) { return; }
-        questionIndex += 1;
-        const qs2 = constraintAgent.getQuestions();
-        if (questionIndex < qs2.length) {
-          sendNextQuestion(panel, constraintAgent, questionIndex);
-        } else {
-          panel.postMessage({ command: "elicitationComplete", totalSaved });
-        }
-        break;
+        case "viewArch":
+          await openArchMd();
+          break;
       }
-
-      case "viewArch": {
-        await openArchMd();
-        break;
-      }
+    } catch (err) {
+      panel.postMessage({ command: "error", message: err instanceof Error ? err.message : String(err) });
     }
   });
 }
 
-// Shared: sets up saveDecision and confirmExtension handlers on the compliance panel
-function setCompliancePanelHandler(panel: BlueprintPanel, context: vscode.ExtensionContext): void {
+// ── Compliance review ───────────────────────────────────────────────────────
+
+function savedMessage(adrId: string, autoApproved: boolean, archNote: string): string {
+  return autoApproved
+    ? `ADR-${adrId} saved. ${archNote}`
+    : `ADR-${adrId} proposed and is awaiting Architect approval. ARCH.md will be updated once it is approved.`;
+}
+
+// Each violation and each extension is resolved individually and produces its own ADR.
+// Replies carry the item's kind + index so the webview can mark that card as done.
+function setCompliancePanelHandler(panel: BlueprintPanel): void {
   panel.setMessageHandler(async (message) => {
-    switch (message.command) {
+    const kind  = message.command === "confirmExtension" ? "extension" : "violation";
+    const index = message.index as number;
+    try {
+      switch (message.command) {
 
-      case "saveDecision": {
-        const adrStore = AdrStore.fromWorkspace();
-        if (!adrStore) { return; }
+        case "resolveViolation": {
+          const result = await orchestrator.resolveViolation(
+            message.violation as ViolationDetail,
+            message.resolution as "update-arch" | "modify-code",
+            message.reasoning as string,
+            lastReviewedFiles
+          );
+          panel.postMessage(result
+            ? {
+                command: "itemResolved", kind, index, adrId: result.adr.id, pending: !result.autoApproved,
+                message: savedMessage(result.adr.id, result.autoApproved, "ARCH.md has been updated."),
+              }
+            : {
+                command: "itemResolved", kind, index, modifyCode: true,
+                message: "No ADR recorded. Revise the code, then re-run the review.",
+              });
+          break;
+        }
 
-        const resolution = message.resolution as string;
-        const reasoning  = message.reasoning  as string;
-        const violations = (message.violations ?? []) as ViolationDetail[];
+        case "confirmExtension": {
+          const result = await orchestrator.confirmExtension(
+            message.extension as ExtensionDetail,
+            (message.reasoning as string | undefined) ?? "",
+            lastReviewedFiles
+          );
+          panel.postMessage({
+            command: "itemResolved", kind, index, adrId: result.adr.id, pending: !result.autoApproved,
+            message: savedMessage(result.adr.id, result.autoApproved, "ARCH.md now lists the new component."),
+          });
+          break;
+        }
 
-        const violationContext = violations.length
-          ? violations.map((v) => `[${v.severity.toUpperCase()}] ${v.constraintId}: ${v.description}`).join("\n")
-          : "Architectural concern detected during compliance check.";
-
-        const adr = await adrStore.create({
-          title:        `Compliance Decision: ${(violations[0]?.description ?? "violation").slice(0, 60)}`,
-          status:       "accepted" as AdrStatus,
-          context:      `Compliance check detected:\n${violationContext}`,
-          decision:     resolution === "update-arch"
-            ? `Update Architecture: ${reasoning}`
-            : `Modify Code: ${reasoning}`,
-          consequences: resolution === "update-arch"
-            ? "ARCH.md should be updated to reflect this approved direction change."
-            : "The generated code should be revised to conform to the existing constraint.",
-        });
-
-        await refreshProviders();
-        panel.postMessage({ command: "saved", adrId: adr.id });
-        break;
+        case "rerun":
+          panel.postMessage({ command: "checking" });
+          await runReview(panel, "full");
+          break;
       }
-
-      case "confirmExtension": {
-        const store    = FileStore.fromWorkspace();
-        const adrStore = AdrStore.fromWorkspace();
-        if (!store || !adrStore) { return; }
-
-        const blueprint = await store.readArchBlueprint();
-        if (!blueprint) { return; }
-
-        const ext       = message.extension as ExtensionDetail;
-        const reasoning = (message.reasoning as string | undefined) ?? "";
-
-        blueprint.components.push({
-          name:           ext.name,
-          responsibility: ext.responsibility,
-          ...(ext.technology ? { technology: ext.technology } : {}),
-        });
-        blueprint.lastUpdated = new Date().toISOString();
-        await store.writeArchBlueprint(blueprint);
-
-        const adr = await adrStore.create({
-          title:        `Extension: Add ${ext.name} component`,
-          status:       "accepted" as AdrStatus,
-          context:      ext.rationale,
-          decision:     reasoning
-            ? `Developer confirmed new component. ${reasoning}`
-            : "Developer confirmed this new structural element during architectural review.",
-          consequences: `ARCH.md updated to include ${ext.name} as a new component.`,
-        });
-
-        await refreshProviders();
-        panel.postMessage({ command: "extensionSaved", adrId: adr.id });
-        break;
+    } catch (err) {
+      const text = err instanceof Error ? err.message : String(err);
+      if (message.command === "rerun") {
+        panel.postMessage({ command: "error", message: text });
+      } else {
+        panel.postMessage({ command: "itemError", kind, index, message: text });
       }
     }
   });
 }
 
-// Shared: gets diff + blueprint + adrs + llm. Posts error/noDiff to panel on failure, returns null.
-interface ReviewContext {
-  diffSummary: DiffSummary;
-  blueprint:   ArchBlueprint;
-  allAdrs:     ADR[];
-  llm:         LLMClient;
+async function runReview(panel: BlueprintPanel, mode: ReviewMode): Promise<void> {
+  try {
+    const outcome = await orchestrator.review(mode);
+    if (outcome.kind === "noDiff") {
+      panel.postMessage({ command: "noDiff" });
+      return;
+    }
+    lastReviewedFiles = (outcome.diffSummary as DiffSummary).newFiles;
+    panel.postMessage({ command: "result", result: outcome.result, diffSummary: outcome.diffSummary });
+  } catch (err) {
+    panel.postMessage({ command: "error", message: err instanceof Error ? err.message : String(err) });
+  }
 }
 
-async function prepareReviewContext(
-  context: vscode.ExtensionContext,
-  panel: BlueprintPanel
-): Promise<ReviewContext | null> {
-  const workspaceFolders = vscode.workspace.workspaceFolders;
-  if (!workspaceFolders?.length) {
-    panel.postMessage({ command: "error", message: "No workspace folder open." });
-    statusBar.setIdle();
-    return null;
-  }
-
-  const summarizer = new DiffSummarizer();
-  const rawDiff    = await summarizer.getDiff(workspaceFolders[0].uri.fsPath);
-  if (!rawDiff.trim()) {
-    panel.postMessage({ command: "noDiff" });
-    statusBar.setIdle();
-    return null;
-  }
-
-  const diffSummary = summarizer.summarize(rawDiff);
-
-  const store    = FileStore.fromWorkspace();
-  const adrStore = AdrStore.fromWorkspace();
-  if (!store || !adrStore) {
-    panel.postMessage({ command: "error", message: "Project not initialized. Run BluePrint: Initialize Project first." });
-    statusBar.setIdle();
-    return null;
-  }
-
-  const [blueprint, allAdrs] = await Promise.all([
-    store.readArchBlueprint(),
-    adrStore.getAll(),
-  ]);
-
-  if (!blueprint) {
-    panel.postMessage({ command: "error", message: "ARCH.md not found. Run BluePrint: Initialize Project first." });
-    statusBar.setIdle();
-    return null;
-  }
-
-  const llm = await LLMClient.fromSecrets(context.secrets);
-  if (!llm) {
-    panel.postMessage({ command: "error", message: "No LLM provider configured. Run BluePrint: Initialize Project first." });
-    statusBar.setIdle();
-    return null;
-  }
-
-  return { diffSummary, blueprint, allAdrs, llm };
+async function handleReview(context: vscode.ExtensionContext, mode: ReviewMode): Promise<void> {
+  const panel = BlueprintPanel.show("postGeneration", context.extensionUri);
+  setCompliancePanelHandler(panel);
+  await panel.loadMedia("compliancePanel.html", { nonce: panel.nonce });
+  await runReview(panel, mode);
 }
 
 async function handleHub(context: vscode.ExtensionContext): Promise<void> {
   const panel = BlueprintPanel.show("hub", context.extensionUri);
   panel.setMessageHandler(async (msg) => {
     switch (msg.command) {
-      case "openViolations": await handleCheckViolations(context); break;
-      case "openExtensions": await handleCheckExtensions(context); break;
-      case "openPreCheck":   await handlePreCheck(context);        break;
+      case "openViolations": await handleReview(context, "violations").catch(reportError); break;
+      case "openExtensions": await handleReview(context, "extensions").catch(reportError); break;
+      case "openPreCheck":   await handlePreCheck(context).catch(reportError);              break;
     }
   });
   await panel.loadMedia("blueprintHub.html", { nonce: panel.nonce });
 }
 
-async function handleCheckViolations(context: vscode.ExtensionContext): Promise<void> {
-  const panel = BlueprintPanel.show("postGeneration", context.extensionUri);
-  setCompliancePanelHandler(panel, context);
-  await panel.loadMedia("compliancePanel.html", { nonce: panel.nonce });
-  statusBar.setChecking();
-  try {
-    const ctx = await prepareReviewContext(context, panel);
-    if (!ctx) { return; }
-
-    const { diffSummary, blueprint, allAdrs, llm } = ctx;
-    const query        = RetrievalAgent.queryFromDiff(diffSummary);
-    const relevantAdrs = await new RetrievalAgent().retrieve(query, allAdrs, blueprint, 5, AdrStore.fromWorkspace());
-    const pass1        = await new ComplianceAgent(llm).check(diffSummary, blueprint, relevantAdrs);
-
-    statusBar[pass1.violation ? "setViolationFound" : "setOk"]();
-    panel.postMessage({ command: "result", result: { ...pass1, extensionDetected: false }, diffSummary });
-  } catch (err) {
-    panel.postMessage({ command: "error", message: String(err) });
-    statusBar.setIdle();
-  }
-}
-
-async function handleCheckExtensions(context: vscode.ExtensionContext): Promise<void> {
-  const panel = BlueprintPanel.show("postGeneration", context.extensionUri);
-  setCompliancePanelHandler(panel, context);
-  await panel.loadMedia("compliancePanel.html", { nonce: panel.nonce });
-  statusBar.setChecking();
-  try {
-    const ctx = await prepareReviewContext(context, panel);
-    if (!ctx) { return; }
-
-    const { diffSummary, blueprint, llm } = ctx;
-    const pass2 = await new ComplianceAgent(llm).detectExtension(diffSummary, blueprint);
-
-    statusBar.setOk();
-    panel.postMessage({ command: "result", result: { violation: false, violations: [], adrsUsed: [], ...pass2 }, diffSummary });
-  } catch (err) {
-    panel.postMessage({ command: "error", message: String(err) });
-    statusBar.setIdle();
-  }
-}
-
-async function handleReviewChange(context: vscode.ExtensionContext): Promise<void> {
-  const panel = BlueprintPanel.show("postGeneration", context.extensionUri);
-  setCompliancePanelHandler(panel, context);
-  await panel.loadMedia("compliancePanel.html", { nonce: panel.nonce });
-  statusBar.setChecking();
-  try {
-    const ctx = await prepareReviewContext(context, panel);
-    if (!ctx) { return; }
-
-    const { diffSummary, blueprint, allAdrs, llm } = ctx;
-    const query        = RetrievalAgent.queryFromDiff(diffSummary);
-    const relevantAdrs = await new RetrievalAgent().retrieve(query, allAdrs, blueprint, 5, AdrStore.fromWorkspace());
-    const agent        = new ComplianceAgent(llm);
-
-    const [pass1, pass2] = await Promise.all([
-      agent.check(diffSummary, blueprint, relevantAdrs),
-      agent.detectExtension(diffSummary, blueprint),
-    ]);
-
-    statusBar[pass1.violation ? "setViolationFound" : "setOk"]();
-    panel.postMessage({ command: "result", result: { ...pass1, ...pass2 }, diffSummary });
-  } catch (err) {
-    panel.postMessage({ command: "error", message: String(err) });
-    statusBar.setIdle();
-  }
-}
+// ── Audit trail ─────────────────────────────────────────────────────────────
 
 async function handleViewAuditTrail(context: vscode.ExtensionContext): Promise<void> {
   const panel = BlueprintPanel.show("auditTrail", context.extensionUri);
 
-  // Register handler before loadMedia so the 'ready' signal from the webview is caught
+  // Register handler before loadMedia so the 'ready' signal from the webview is caught (T53)
   panel.setMessageHandler(async (msg) => {
     if (msg.command === "ready") {
       const adrStore = AdrStore.fromWorkspace();
-      const adrs     = adrStore ? await adrStore.getAll() : [];
-      panel.postMessage({ command: "load", adrs });
+      const auditLog = AuditLog.fromWorkspace();
+      const [adrs, entries] = await Promise.all([
+        adrStore ? adrStore.getAll() : Promise.resolve([] as ADR[]),
+        auditLog ? auditLog.getAll() : Promise.resolve([]),
+      ]);
+      panel.postMessage({ command: "load", adrs, entries });
     }
     if (msg.command === "openAdr") {
       await openAdrFile(msg.adr as ADR);
@@ -515,6 +377,8 @@ async function handleViewAuditTrail(context: vscode.ExtensionContext): Promise<v
 
   await panel.loadMedia("auditTrail.html", { nonce: panel.nonce });
 }
+
+// ── ARCH.md / ADR files ─────────────────────────────────────────────────────
 
 async function openArchMd(): Promise<void> {
   const store = FileStore.fromWorkspace();
@@ -527,9 +391,7 @@ async function openArchMd(): Promise<void> {
     await vscode.workspace.fs.stat(uri);
     await vscode.commands.executeCommand("markdown.showPreview", uri);
   } catch {
-    vscode.window.showWarningMessage(
-      "BluePrint: ARCH.md not found. Run BluePrint: Initialize Project first."
-    );
+    vscode.window.showWarningMessage("BluePrint: ARCH.md not found. Run BluePrint: Initialize Project first.");
   }
 }
 
@@ -545,9 +407,10 @@ async function openAdrFile(adr: ADR): Promise<void> {
   }
 }
 
+// ── Pre-check ───────────────────────────────────────────────────────────────
+
 async function handlePreCheck(context: vscode.ExtensionContext): Promise<void> {
-  const store = FileStore.fromWorkspace();
-  if (!store || !(await store.isInitialized())) {
+  if (!(await orchestrator.isInitialized())) {
     vscode.window.showWarningMessage("BluePrint: Initialize the project first before running a pre-check.");
     return;
   }
@@ -556,59 +419,136 @@ async function handlePreCheck(context: vscode.ExtensionContext): Promise<void> {
 
   panel.setMessageHandler(async (msg) => {
     switch (msg.command) {
-
       case "check": {
-        const promptText = msg.promptText as string;
         panel.postMessage({ command: "checking" });
-
         try {
-          const fileStore = FileStore.fromWorkspace();
-          const adrStore  = AdrStore.fromWorkspace();
-          if (!fileStore || !adrStore) {
-            panel.postMessage({ command: "error", message: "Project store unavailable." });
-            return;
-          }
-
-          const [blueprint, allAdrs] = await Promise.all([
-            fileStore.readArchBlueprint(),
-            adrStore.getAll(),
-          ]);
-
-          if (!blueprint) {
-            panel.postMessage({ command: "error", message: "ARCH.md not found. Run BluePrint: Initialize Project first." });
-            return;
-          }
-
-          const llm = await LLMClient.fromSecrets(context.secrets);
-          if (!llm) {
-            panel.postMessage({ command: "error", message: "No LLM provider configured. Run BluePrint: Initialize Project first." });
-            return;
-          }
-
-          // Use the developer's prompt text as the retrieval query
-          const relevantAdrs = await new RetrievalAgent().retrieve(promptText, allAdrs, blueprint, 5, adrStore);
-          const result = await new PreCheckAgent(llm).check(promptText, blueprint, relevantAdrs);
-          panel.postMessage({ command: "result", result, retrievedAdrs: relevantAdrs });
-
+          const { result, retrievedAdrs } = await orchestrator.preCheck(msg.promptText as string);
+          panel.postMessage({ command: "result", result, retrievedAdrs });
         } catch (err) {
-          panel.postMessage({ command: "error", message: String(err) });
+          panel.postMessage({ command: "error", message: err instanceof Error ? err.message : String(err) });
         }
         break;
       }
-
-      case "openArch": {
-        await openArchMd();
-        break;
-      }
-
-      case "openAdr": {
-        await openAdrFile(msg.adr as ADR);
-        break;
-      }
+      case "openArch": await openArchMd(); break;
+      case "openAdr":  await openAdrFile(msg.adr as ADR); break;
     }
   });
 
   await panel.loadMedia("preCheckPanel.html", { nonce: panel.nonce });
+}
+
+// ── Approval queue, search, roles, history ──────────────────────────────────
+
+async function pickAdr(adrs: ADR[], placeHolder: string): Promise<ADR | undefined> {
+  const picked = await vscode.window.showQuickPick(
+    adrs.map((a) => ({ label: `ADR-${a.id}: ${a.title}`, description: a.status, detail: a.proposedBy ? `Proposed by ${a.proposedBy}` : undefined, adr: a })),
+    { placeHolder, matchOnDescription: true, matchOnDetail: true }
+  );
+  return picked?.adr;
+}
+
+async function resolveTargetAdr(arg: unknown): Promise<ADR | undefined> {
+  const fromItem = (arg as { adr?: ADR } | undefined)?.adr ?? (arg as ADR | undefined);
+  if (fromItem && typeof fromItem === "object" && "id" in fromItem) { return fromItem as ADR; }
+
+  const adrs    = (await AdrStore.fromWorkspace()?.getAll()) ?? [];
+  const pending = adrs.filter((a) => a.status === "proposed");
+  if (!pending.length) {
+    vscode.window.showInformationMessage("BluePrint: No decisions are awaiting approval.");
+    return undefined;
+  }
+  return pickAdr(pending, "Choose a pending decision");
+}
+
+async function handleApprove(arg: unknown): Promise<void> {
+  const adr = await resolveTargetAdr(arg);
+  if (!adr) { return; }
+  const note = await vscode.window.showInputBox({ prompt: `Approve ADR-${adr.id}: ${adr.title}`, placeHolder: "Optional note for the proposer" });
+  if (note === undefined) { return; } // dismissed
+  await orchestrator.approve(adr.id, note);
+  vscode.window.showInformationMessage(`BluePrint: ADR-${adr.id} approved. ARCH.md updated.`);
+}
+
+async function handleReject(arg: unknown): Promise<void> {
+  const adr = await resolveTargetAdr(arg);
+  if (!adr) { return; }
+  const note = await vscode.window.showInputBox({
+    prompt: `Reject ADR-${adr.id}: ${adr.title}`,
+    placeHolder: "Your reasoning (required) — it is attached to the ADR for the proposer",
+    validateInput: (v) => (v.trim() ? undefined : "A rejection needs your reasoning."),
+  });
+  if (note === undefined) { return; }
+  await orchestrator.reject(adr.id, note);
+  vscode.window.showInformationMessage(`BluePrint: ADR-${adr.id} rejected.`);
+}
+
+async function handleSearchAdrs(): Promise<void> {
+  const adrs = (await AdrStore.fromWorkspace()?.getAll()) ?? [];
+  if (!adrs.length) {
+    vscode.window.showInformationMessage("BluePrint: No ADRs recorded yet.");
+    return;
+  }
+  const adr = await pickAdr(adrs, "Search ADRs by title, status, author…");
+  if (adr) { await openAdrFile(adr); }
+}
+
+async function handleFilterAdrs(): Promise<void> {
+  const query = await vscode.window.showInputBox({
+    prompt: "Filter the ADR Browser (leave empty to clear)",
+    value: adrTreeProvider.getFilter(),
+  });
+  if (query !== undefined) { adrTreeProvider.setFilter(query); }
+}
+
+async function handleConfigureRoles(): Promise<void> {
+  const access = AccessControl.fromWorkspace();
+  if (!access) {
+    vscode.window.showWarningMessage("BluePrint: No workspace folder open.");
+    return;
+  }
+  const uri = await access.ensureManifest();
+  await vscode.window.showTextDocument(uri);
+  vscode.window.showInformationMessage(
+    "BluePrint: List Architect emails under \"architects\". Commit this file so the whole team shares it."
+  );
+}
+
+async function handleRevertArch(): Promise<void> {
+  const store = FileStore.fromWorkspace();
+  if (!store) { return; }
+  const history = (await store.getHistory()).slice().reverse();
+  if (!history.length) {
+    vscode.window.showInformationMessage("BluePrint: ARCH.md has no earlier versions yet.");
+    return;
+  }
+
+  const picked = await vscode.window.showQuickPick(
+    history.map((h) => ({
+      label: h.reason,
+      description: new Date(h.timestamp).toLocaleString(),
+      detail: h.sections.length ? `Changed: ${h.sections.join(", ")}` : undefined,
+      entry: h,
+    })),
+    { placeHolder: "Restore ARCH.md to the version from before this change" }
+  );
+  if (!picked) { return; }
+
+  const folders = vscode.workspace.workspaceFolders!;
+  const snapshotUri = vscode.Uri.joinPath(folders[0].uri, ".blueprint", "history", `${picked.entry.id}.md`);
+  await vscode.commands.executeCommand("vscode.diff", snapshotUri, store.getArchMdUri(), `ARCH.md: version before "${picked.entry.reason}" ↔ current`);
+
+  const confirm = await vscode.window.showWarningMessage(
+    "Restore this version of ARCH.md? The current version is saved to history first, so this can be undone.",
+    { modal: true },
+    "Restore"
+  );
+  if (confirm !== "Restore") { return; }
+  await store.revertTo(picked.entry.id);
+  await AuditLog.fromWorkspace()?.append({
+    eventType: "arch_reverted", summary: `ARCH.md reverted to the version before "${picked.entry.reason}"`,
+    actor: (await AccessControl.fromWorkspace()?.resolveIdentity()) ?? undefined,
+  });
+  vscode.window.showInformationMessage("BluePrint: ARCH.md restored.");
 }
 
 export function deactivate(): void {

@@ -32,6 +32,9 @@ export class RetrievalAgent {
     topK = 5,
     adrStore?: AdrStore | null
   ): Promise<ADR[]> {
+    // Only binding decisions count as context — pending, rejected and retired ADRs must not
+    // be used to judge new code.
+    adrs = adrs.filter((a) => a.status === "accepted");
     if (adrs.length <= topK) { return adrs; }
     if (!query.trim())       { return adrs.slice(0, topK); }
 
@@ -80,7 +83,7 @@ export class RetrievalAgent {
   }
 
   /** Returns the ADR's cached embedding, generating and persisting one if missing/stale. */
-  private async ensureEmbedding(
+  async ensureEmbedding(
     adr: ADR,
     text: string,
     adrStore?: AdrStore | null
@@ -109,7 +112,7 @@ export class RetrievalAgent {
 
   // ── Private helpers ───────────────────────────────────────────────────────
 
-  private static adrToText(adr: ADR): string {
+  static adrToText(adr: ADR): string {
     return `${adr.title} ${adr.context} ${adr.decision} ${adr.consequences ?? ""}`;
   }
 

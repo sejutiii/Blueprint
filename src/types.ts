@@ -1,6 +1,12 @@
 // Core data models shared across all agents and UI components
 
-export type AdrStatus = "proposed" | "accepted" | "deprecated" | "superseded";
+// "proposed" = pending Architect approval; "rejected" = Architect declined it.
+export type AdrStatus = "proposed" | "accepted" | "rejected" | "deprecated" | "superseded";
+
+// What approving an ADR does to ARCH.md, so approval (not proposal) triggers the patch.
+export type ArchEffect =
+  | { kind: "add-component"; component: ArchComponent }
+  | { kind: "add-constraint"; constraint: string };
 
 export interface ADR {
   id: string;           // e.g. "0001"
@@ -12,6 +18,10 @@ export interface ADR {
   timestamp: string;    // ISO 8601
   tags?: string[];
   embedding?: number[]; // stored separately in adr-index.json
+  proposedBy?: string;  // git user.email of the proposer
+  reviewedBy?: string;  // Architect who approved/rejected
+  reviewNote?: string;  // Architect's reasoning on rejection (or approval)
+  archEffect?: ArchEffect; // applied to ARCH.md when the ADR is approved
 }
 
 export interface ArchComponent {
@@ -54,16 +64,29 @@ export interface ExtensionDetail {
 export interface ComplianceResult {
   violation: boolean;
   violations: ViolationDetail[];
-  extensionDetected?: boolean;
-  extension?: ExtensionDetail;
+  extensions: ExtensionDetail[]; // Pass 2 output; runs in parallel with Pass 1
   adrsUsed: string[];   // ADR IDs used as context
 }
 
+export type AuditEventType =
+  | "compliance_check"
+  | "extension_detected"
+  | "pre_check"
+  | "adr_proposed"
+  | "adr_approved"
+  | "adr_rejected"
+  | "adr_created"
+  | "arch_updated"
+  | "arch_reverted";
+
 export interface AuditEntry {
+  id: string;
   timestamp: string;
-  eventType: "compliance_check" | "extension_detected" | "adr_created" | "arch_updated";
+  eventType: AuditEventType;
   summary: string;
-  adrId?: string;
+  actor?: string;                 // git user.email of whoever triggered it
+  adrId?: string;                 // linked ADR
+  changedFiles?: string[];        // files in the diff that prompted the event
   complianceResult?: ComplianceResult;
 }
 

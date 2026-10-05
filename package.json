@@ -50,6 +50,36 @@
         "command": "blueprint.viewAuditTrail",
         "title": "BluePrint: View Decision Audit Trail",
         "icon": "$(history)"
+      },
+      {
+        "command": "blueprint.approveAdr",
+        "title": "BluePrint: Approve Pending Decision",
+        "icon": "$(check)"
+      },
+      {
+        "command": "blueprint.rejectAdr",
+        "title": "BluePrint: Reject Pending Decision",
+        "icon": "$(close)"
+      },
+      {
+        "command": "blueprint.searchAdrs",
+        "title": "BluePrint: Search ADRs",
+        "icon": "$(search)"
+      },
+      {
+        "command": "blueprint.filterAdrs",
+        "title": "BluePrint: Filter ADR Browser",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "blueprint.configureRoles",
+        "title": "BluePrint: Configure Roles (Architects)",
+        "icon": "$(organization)"
+      },
+      {
+        "command": "blueprint.revertArch",
+        "title": "BluePrint: Revert ARCH.md to Earlier Version",
+        "icon": "$(discard)"
       }
     ],
     "viewsContainers": {
@@ -105,8 +135,85 @@
         {
           "command": "blueprint.viewAuditTrail",
           "when": "blueprint.initialized"
+        },
+        {
+          "command": "blueprint.approveAdr",
+          "when": "blueprint.initialized"
+        },
+        {
+          "command": "blueprint.rejectAdr",
+          "when": "blueprint.initialized"
+        },
+        {
+          "command": "blueprint.searchAdrs",
+          "when": "blueprint.initialized"
+        },
+        {
+          "command": "blueprint.filterAdrs",
+          "when": "blueprint.initialized"
+        },
+        {
+          "command": "blueprint.revertArch",
+          "when": "blueprint.initialized"
+        },
+        {
+          "command": "blueprint.configureRoles"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "blueprint.searchAdrs",
+          "when": "view == blueprint.adrBrowser",
+          "group": "navigation@1"
+        },
+        {
+          "command": "blueprint.filterAdrs",
+          "when": "view == blueprint.adrBrowser",
+          "group": "navigation@2"
+        },
+        {
+          "command": "blueprint.configureRoles",
+          "when": "view == blueprint.adrBrowser",
+          "group": "overflow"
+        },
+        {
+          "command": "blueprint.viewAuditTrail",
+          "when": "view == blueprint.auditTrail",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "blueprint.approveAdr",
+          "when": "view == blueprint.adrBrowser && viewItem == adr-pending",
+          "group": "inline@1"
+        },
+        {
+          "command": "blueprint.rejectAdr",
+          "when": "view == blueprint.adrBrowser && viewItem == adr-pending",
+          "group": "inline@2"
+        },
+        {
+          "command": "blueprint.approveAdr",
+          "when": "view == blueprint.adrBrowser && viewItem == adr-pending",
+          "group": "review@1"
+        },
+        {
+          "command": "blueprint.rejectAdr",
+          "when": "view == blueprint.adrBrowser && viewItem == adr-pending",
+          "group": "review@2"
         }
       ]
+    },
+    "configuration": {
+      "title": "BluePrint",
+      "properties": {
+        "blueprint.autoReviewOnNewFile": {
+          "type": "boolean",
+          "default": true,
+          "description": "Offer an architectural review when new files are created in the workspace."
+        }
+      }
     }
   },
   "scripts": {
@@ -125,6 +232,8 @@
     "typescript": "^5.3.0"
   },
   "dependencies": {
-    "@huggingface/transformers": "^4.2.0"
+    "@huggingface/transformers": "^4.2.0",
+    "tree-sitter-wasms": "^0.1.13",
+    "web-tree-sitter": "^0.22.6"
   }
 }

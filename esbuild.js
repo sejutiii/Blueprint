@@ -32,8 +32,9 @@ const ctx = esbuild.context({
   outfile: "dist/extension.js",
   // @huggingface/transformers pulls in onnxruntime-node (native .node bindings) and
   // sharp (native image bindings) — these can't be bundled into a single JS file,
-  // so leave them as real node_modules requires resolved at runtime.
-  external: ["vscode", "@huggingface/transformers", "onnxruntime-node", "onnxruntime-web", "sharp"],
+  // so leave them as real node_modules requires resolved at runtime. web-tree-sitter likewise
+  // loads its tree-sitter.wasm from next to its own module file.
+  external: ["vscode", "@huggingface/transformers", "onnxruntime-node", "onnxruntime-web", "sharp", "web-tree-sitter"],
   logLevel: "silent",
   define: {
     "process.env.BLUEPRINT_DEFAULT_PROVIDER": JSON.stringify(dotEnv.BLUEPRINT_DEFAULT_PROVIDER || ""),

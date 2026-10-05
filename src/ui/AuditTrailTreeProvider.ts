@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
-import { ADR, AdrStatus } from "../types";
+import { ADR } from "../types";
+import { iconForStatus } from "./AdrTreeProvider";
 
 class AuditItem extends vscode.TreeItem {
   constructor(readonly adr: ADR) {
@@ -12,21 +13,12 @@ class AuditItem extends vscode.TreeItem {
       `**${adr.status.toUpperCase()}** · ADR-${adr.id}\n\n${adr.decision.slice(0, 200)}`
     );
     this.contextValue = "auditItem";
-    this.iconPath = new vscode.ThemeIcon(AuditItem.iconForStatus(adr.status));
+    this.iconPath = new vscode.ThemeIcon(iconForStatus(adr.status));
     this.command = {
       command: "blueprint.openAdr",
       title: "Open ADR",
       arguments: [adr],
     };
-  }
-
-  private static iconForStatus(status: AdrStatus): string {
-    switch (status) {
-      case "accepted":   return "check";
-      case "proposed":   return "circle-outline";
-      case "deprecated": return "circle-slash";
-      case "superseded": return "arrow-right";
-    }
   }
 }
 

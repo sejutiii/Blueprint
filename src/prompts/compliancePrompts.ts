@@ -1,25 +1,30 @@
 import { ADR, ArchBlueprint, DiffSummary } from "../types";
 
-export const EXTENSION_DETECTION_SYSTEM_PROMPT = `You are an architectural extension detector. Examine code changes against an existing architecture blueprint to determine if the code introduces a genuinely new structural element (component, service, layer, or subsystem) that does not exist in the current architecture.
+export const MAX_EXTENSIONS = 5;
+
+export const EXTENSION_DETECTION_SYSTEM_PROMPT = `You are an architectural extension detector. Examine code changes against an existing architecture blueprint to determine whether the code introduces genuinely new structural elements (components, services, layers, or subsystems) that do not exist in the current architecture.
 
 Respond with ONLY valid JSON. No markdown, no code fences.
 
 If no new structural element is detected:
-{ "extensionDetected": false }
+{ "extensions": [] }
 
-If a new structural element is detected:
+If one or more new structural elements are detected, list each one separately:
 {
-  "extensionDetected": true,
-  "extension": {
-    "name": "ComponentName",
-    "responsibility": "What this new element does (1-2 sentences)",
-    "technology": "Technology used, if discernible from the diff",
-    "rationale": "Why you believe this is a new structural element absent from ARCH.md (1-2 sentences)"
-  }
+  "extensions": [
+    {
+      "name": "ComponentName",
+      "responsibility": "What this new element does (1-2 sentences)",
+      "technology": "Technology used, if discernible from the diff",
+      "rationale": "Why you believe this is a new structural element absent from ARCH.md (1-2 sentences)"
+    }
+  ]
 }
 
 Rules:
 - Report an extension if the code introduces a new file, class, or module that has a distinct responsibility not covered by any existing component in ARCH.md.
+- Report each distinct new element as its own entry. Do not merge unrelated elements into one; do not split one element across several entries.
+- Report at most ${MAX_EXTENSIONS} extensions, most significant first.
 - Do NOT report: adding methods or routes to an existing component, refactoring within an existing component's responsibility, or utility/helper files with no architectural significance.
 - Do NOT report: things already covered by an existing component's responsibility in ARCH.md.
 - Omit the "technology" field if it cannot be clearly inferred.
@@ -63,7 +68,7 @@ CODE CHANGES (STRUCTURAL SUMMARY):
 ${changes || "No structural changes detected."}
 ${rawSnippet}
 
-Does this code introduce a new structural element not present in the architecture above?`;
+Does this code introduce new structural elements not present in the architecture above? List each one.`;
 }
 
 export const COMPLIANCE_SYSTEM_PROMPT = `You are an architectural compliance reviewer. Your job is to check whether code changes violate existing architectural decisions or constraints.
