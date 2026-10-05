@@ -11,6 +11,7 @@ import { AuditLog } from "./storage/AuditLog";
 import { AccessControl } from "./access/AccessControl";
 import { Orchestrator, BlueprintError, ReviewMode } from "./orchestrator/Orchestrator";
 import { ConstraintElicitationAgent } from "./agents/ConstraintElicitationAgent";
+import { ElicitationSession, WizardQuestion } from "./agents/ElicitationSession";
 import { ConstraintDraft } from "./prompts/constraintPrompts";
 import { adrFilename } from "./prompts/adrPrompts";
 import { ViolationDetail, ExtensionDetail, ADR, DiffSummary } from "./types";
@@ -133,15 +134,15 @@ async function checkInitialized(): Promise<void> {
   }
 }
 
-function sendNextQuestion(panel: BlueprintPanel, agent: ConstraintElicitationAgent, index: number): void {
-  const questions = agent.getQuestions();
-  const q = questions[index];
+function sendQuestion(panel: BlueprintPanel, q: WizardQuestion): void {
   panel.postMessage({
     command:     "showQuestion",
     question:    q.question,
     placeholder: q.placeholder,
-    index,
-    total:       questions.length,
+    index:       q.topicIndex,
+    total:       q.topicTotal,
+    isFollowUp:  q.isFollowUp,
+    parent:      q.parent,
   });
 }
 
@@ -173,18 +174,19 @@ async function handleInit(context: vscode.ExtensionContext): Promise<void> {
   });
 
   let constraintAgent: ConstraintElicitationAgent | null = null;
-  let questionIndex = 0;
-  let totalSaved    = 0;
-  let totalPending  = 0;
+  let session: ElicitationSession | null = null;
+  let totalSaved   = 0;
+  let totalPending = 0;
 
-  const advance = () => {
-    questionIndex += 1;
-    if (constraintAgent && questionIndex < constraintAgent.getQuestions().length) {
-      sendNextQuestion(panel, constraintAgent, questionIndex);
+  const showNext = (next: WizardQuestion | null) => {
+    if (next) {
+      sendQuestion(panel, next);
     } else {
       panel.postMessage({ command: "elicitationComplete", totalSaved, totalPending });
     }
   };
+
+  const ELICITATION_COMMANDS = new Set(["startConstraints", "submitAnswer", "skipQuestion", "saveDraft", "discardDraft"]);
 
   panel.setMessageHandler(async (message) => {
     try {
@@ -213,36 +215,49 @@ async function handleInit(context: vscode.ExtensionContext): Promise<void> {
 
         case "startConstraints":
           constraintAgent = await orchestrator.createConstraintAgent();
-          questionIndex   = 0;
+          session         = constraintAgent.startSession();
           totalSaved      = 0;
           totalPending    = 0;
-          sendNextQuestion(panel, constraintAgent, questionIndex);
+          showNext(session.getCurrent());
           break;
 
         case "submitAnswer": {
-          if (!constraintAgent) { return; }
-          const questions = constraintAgent.getQuestions();
+          const current = session?.getCurrent();
+          if (!constraintAgent || !session || !current) { return; }
+          const answer = message.answer as string;
           panel.postMessage({ command: "analyzing" });
-          const result = await constraintAgent.analyzeAnswer(questions[questionIndex], message.answer as string);
+          const result = await constraintAgent.analyzeAnswer(current, answer);
+          session.recordAnswer(answer, result.followUp);
           if (result.hasConstraint && result.draft) {
-            panel.postMessage({ command: "showDraft", draft: result.draft, index: questionIndex, total: questions.length });
+            panel.postMessage({
+              command: "showDraft", draft: result.draft,
+              index: current.topicIndex, total: current.topicTotal, hasFollowUp: !!result.followUp && !current.isFollowUp,
+            });
           } else {
-            advance();
+            showNext(session.advance());
           }
           break;
         }
 
         case "skipQuestion":
+          if (session) { showNext(session.skip()); }
+          break;
+
         case "discardDraft":
-          if (constraintAgent) { advance(); }
+          if (session) { showNext(session.advance()); }
           break;
 
         case "saveDraft": {
-          const { adr, autoApproved } = await orchestrator.saveConstraintDraft(message.draft as ConstraintDraft);
+          if (!session) { return; }
+          const draft = message.draft as ConstraintDraft;
+          if (!draft.title?.trim() || !draft.decision?.trim()) {
+            panel.postMessage({ command: "error", stage: "draft", message: "An ADR needs at least a title and a decision." });
+            return;
+          }
+          const { autoApproved } = await orchestrator.saveConstraintDraft(draft);
           totalSaved += 1;
           if (!autoApproved) { totalPending += 1; }
-          void adr;
-          advance();
+          showNext(session.advance());
           break;
         }
 
@@ -251,7 +266,12 @@ async function handleInit(context: vscode.ExtensionContext): Promise<void> {
           break;
       }
     } catch (err) {
-      panel.postMessage({ command: "error", message: err instanceof Error ? err.message : String(err) });
+      // Errors mid-elicitation keep the user on the current question instead of restarting setup.
+      panel.postMessage({
+        command: "error",
+        stage:   ELICITATION_COMMANDS.has(message.command as string) ? "constraints" : "setup",
+        message: err instanceof Error ? err.message : String(err),
+      });
     }
   });
 }

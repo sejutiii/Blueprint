@@ -9,6 +9,7 @@ Legend: `[ ]` todo · `[x]` done · **SRS** = section/test-case it satisfies.
 - **D1 — Pass 1 and Pass 2 run in parallel** on every full review (deviates from SRS 3.2.3 / 3.3.2, which run Pass 2 only when Pass 1 is clean). Violations and extensions are shown together; extensions found alongside violations carry a warning.
 - **D2 — One ADR per item.** Each violation is resolved individually (Update Architecture → its own ADR; Modify Code → no ADR). Extension detection returns a list (max 5); each registered extension → its own ADR + ARCH.md component row.
 - **D3 — Keep RBAC** (SRS 3.2.5) and **Tree-sitter** parsing (SRS 3.2.3).
+- **D5 — Wizard follow-ups.** The 5 topic questions stay; each answer may yield one LLM-generated follow-up (same LLM call as the analysis, max one level deep, so at most 10 questions).
 - **D4 — Orchestrator split kept** (`src/orchestrator/Orchestrator.ts`): pipelines live there, `extension.ts` is UI only.
 
 ## Phase 1 — Bugs & correctness (fix before adding features)
@@ -25,7 +26,7 @@ Legend: `[ ]` todo · `[x]` done · **SRS** = section/test-case it satisfies.
 - [x] **B10** Retrieval should consider only `accepted` ADRs (not proposed/rejected/deprecated/superseded).
 - [ ] **B11** `.vscodeignore` excludes `node_modules/**`, but `@huggingface/transformers` / `onnxruntime-node` / `sharp` are esbuild externals → in a packaged VSIX local embeddings **always** fail and silently fall back to TF-IDF. Ship the runtime deps (or pre-bundle the model) and verify with `vsce ls`. *SRS 4.2*
 - [x] **B13** BluePrint's own artifacts (`.blueprint/`, `docs/adr/`, `docs/ARCH.md`) were included in the reviewed diff and sent to the LLM. *(fixed — `isReviewable` filter)*
-- [ ] **B14** Webviews used `alert()`, which VS Code webviews block. *(fixed in compliance panel; check the others)*
+- [x] **B14** Webviews used `alert()`, which VS Code webviews block. *(removed everywhere)*
 - [ ] **B15** No ESLint config exists, so `npm run lint` fails.
 - [ ] **B12** Security: `.env` bakes a real default API key into `dist/extension.js`. Guarantee it can never be in a published VSIX (production build must ignore `.env`); document rotating the current key.
 
@@ -35,7 +36,7 @@ Legend: `[ ]` todo · `[x]` done · **SRS** = section/test-case it satisfies.
 - [x] **R2 Non-destructive ARCH.md patching** *(SRS 2.2, 3.2.4)*: replace full re-render-from-JSON with targeted section patches (add component row, add constraint bullet, resolve open question) that preserve manual edits.
 - [x] **R3 ARCH.md version history** *(SRS 2.1)*: snapshot to `.blueprint/history/` before every patch; "BluePrint: Revert ARCH.md" (pick a version, diff, confirm).
 - [ ] **R4 Living ARCH.md** *(memory note + future_extensions #3)*: ~~after elicitation, sync approved constraints into arch.json/ARCH.md~~ (done via ADR archEffect); still to do: "Regenerate ARCH.md from codebase" command.
-- [ ] **R5 Constraint elicitation** *(SRS 3.1)*: branching dialogue (next question depends on prior answers) instead of a fixed 5-question list; let the developer **edit** a draft before saving. (Keep ≤5–7 questions so T16–T20 still hold.)
+- [x] **R5 Constraint elicitation** *(SRS 3.1)*: branching dialogue (next question depends on prior answers) instead of a fixed 5-question list; let the developer **edit** a draft before saving. (Keep ≤5–7 questions so T16–T20 still hold.)
 - [x] **R6 Tree-sitter diff summarization** *(SRS 3.2.3, Actors)*: parse changed/new files with `web-tree-sitter` (JS/TS/Python/Java/Go grammars) for imports, class/function signatures; keep the current regex path as fallback for unsupported languages.
 - [x] **R7 Orchestrator** *(SRS 1.2, 4)*: extract the state machine (`PROJECT_INIT`, `PROMPT_SUBMITTED`, `CODE_GENERATED`, `MANUAL_REVIEW_REQUESTED`) out of the 600-line `extension.ts`; `extension.ts` becomes a thin UI shell. Types for this already exist and are unused.
 

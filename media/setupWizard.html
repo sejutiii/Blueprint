@@ -213,6 +213,32 @@
       color: var(--vscode-editorInfo-foreground, var(--vscode-foreground));
     }
 
+    .followup-context {
+      font-size: 11px;
+      color: var(--vscode-descriptionForeground);
+      border-left: 2px solid var(--vscode-button-background);
+      padding: 4px 0 4px 10px;
+      margin-bottom: 10px;
+      line-height: 1.5;
+    }
+    .followup-tag {
+      display: inline-block;
+      font-size: 10px; font-weight: 700; letter-spacing: 0.4px;
+      padding: 1px 6px; border-radius: 3px; margin-right: 6px;
+      background: var(--vscode-badge-background); color: var(--vscode-badge-foreground);
+    }
+    .inline-error {
+      font-size: 12px;
+      color: var(--vscode-errorForeground);
+      background: var(--vscode-inputValidation-errorBackground);
+      border: 1px solid var(--vscode-inputValidation-errorBorder);
+      border-radius: 3px;
+      padding: 8px 10px;
+      margin-bottom: 14px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
     .hidden { display: none !important; }
   </style>
 </head>
@@ -336,8 +362,13 @@
         <span class="progress-label" id="constraint-progress-label">Question 1 of 5</span>
       </div>
 
+      <div id="cq-error" class="inline-error hidden"></div>
+
       <!-- Sub-state: question -->
       <div id="cq-question">
+        <div id="cq-followup-context" class="followup-context hidden">
+          <span class="followup-tag">FOLLOW-UP</span>Based on your answer: <em id="cq-parent-answer"></em>
+        </div>
         <p class="question-text" id="cq-question-text"></p>
         <div class="field">
           <textarea id="cq-answer" style="min-height:90px"></textarea>
@@ -358,7 +389,7 @@
 
       <!-- Sub-state: draft review -->
       <div id="cq-draft" class="hidden">
-        <div class="draft-banner">Constraint detected — review the draft ADR before saving</div>
+        <div class="draft-banner" id="draft-banner">Constraint detected. Review and edit the draft ADR before saving.</div>
         <div class="field">
           <label for="draft-title">Title</label>
           <input type="text" id="draft-title" />
@@ -501,29 +532,55 @@
   });
 
   // ── Constraint: submit answer ──────────────────────
+  function setInlineError(message) {
+    const box = document.getElementById('cq-error');
+    box.textContent = message || '';
+    box.classList.toggle('hidden', !message);
+  }
+
+  function setDraftButtonsDisabled(disabled) {
+    document.getElementById('btn-save-draft').disabled = disabled;
+    document.getElementById('btn-discard-draft').disabled = disabled;
+  }
+
   document.getElementById('btn-submit-answer').addEventListener('click', () => {
     const answer = document.getElementById('cq-answer').value.trim();
+    setInlineError('');
     vscode.postMessage({ command: 'submitAnswer', answer });
   });
 
+  document.getElementById('cq-answer').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      document.getElementById('btn-submit-answer').click();
+    }
+  });
+
   document.getElementById('btn-skip-question').addEventListener('click', () => {
+    setInlineError('');
     vscode.postMessage({ command: 'skipQuestion' });
   });
 
   // ── Constraint: draft review ───────────────────────
   document.getElementById('btn-save-draft').addEventListener('click', () => {
-    vscode.postMessage({
-      command: 'saveDraft',
-      draft: {
-        title:        document.getElementById('draft-title').value,
-        context:      document.getElementById('draft-context').value,
-        decision:     document.getElementById('draft-decision').value,
-        consequences: document.getElementById('draft-consequences').value,
-      },
-    });
+    const draft = {
+      title:        document.getElementById('draft-title').value.trim(),
+      context:      document.getElementById('draft-context').value.trim(),
+      decision:     document.getElementById('draft-decision').value.trim(),
+      consequences: document.getElementById('draft-consequences').value.trim(),
+    };
+    if (!draft.title || !draft.decision) {
+      setInlineError('An ADR needs at least a title and a decision.');
+      document.getElementById(draft.title ? 'draft-decision' : 'draft-title').focus();
+      return;
+    }
+    setInlineError('');
+    setDraftButtonsDisabled(true); // prevent a double click from saving the ADR twice
+    vscode.postMessage({ command: 'saveDraft', draft });
   });
 
   document.getElementById('btn-discard-draft').addEventListener('click', () => {
+    setInlineError('');
+    setDraftButtonsDisabled(true);
     vscode.postMessage({ command: 'discardDraft' });
   });
 
@@ -538,11 +595,11 @@
   });
 
   // ── Progress bar helper ────────────────────────────
-  function setProgress(index, total) {
+  function setProgress(index, total, isFollowUp) {
     const pct = total > 0 ? Math.round((index / total) * 100) : 0;
     document.getElementById('constraint-progress-fill').style.width = pct + '%';
     document.getElementById('constraint-progress-label').textContent =
-      `Question ${index + 1} of ${total}`;
+      `Topic ${index + 1} of ${total}${isFollowUp ? ' · follow-up' : ''}`;
   }
 
   // ── Messages from extension host ───────────────────
@@ -584,16 +641,26 @@
       }
 
       // Begin constraint elicitation
-      case 'showQuestion':
+      case 'showQuestion': {
         showScreen('screen-constraints');
         setDots(3);
-        setProgress(msg.index, msg.total);
+        setInlineError('');
+        setDraftButtonsDisabled(false);
+        setProgress(msg.index, msg.total, msg.isFollowUp);
+        const ctx = document.getElementById('cq-followup-context');
+        if (msg.isFollowUp && msg.parent) {
+          document.getElementById('cq-parent-answer').textContent = `"${msg.parent.answer}"`;
+          ctx.classList.remove('hidden');
+        } else {
+          ctx.classList.add('hidden');
+        }
         document.getElementById('cq-question-text').textContent = msg.question;
         document.getElementById('cq-answer').placeholder = msg.placeholder || '';
         document.getElementById('cq-answer').value = '';
         showCqState('cq-question');
         document.getElementById('cq-answer').focus();
         break;
+      }
 
       // Analyzing spinner
       case 'analyzing':
@@ -607,18 +674,27 @@
         document.getElementById('draft-context').value      = d.context      || '';
         document.getElementById('draft-decision').value     = d.decision     || '';
         document.getElementById('draft-consequences').value = d.consequences || '';
+        document.getElementById('draft-banner').textContent = msg.hasFollowUp
+          ? 'Constraint detected. Review and edit the draft ADR before saving. A follow-up question comes next.'
+          : 'Constraint detected. Review and edit the draft ADR before saving.';
+        setDraftButtonsDisabled(false);
         showCqState('cq-draft');
-        setProgress(msg.index, msg.total);
         break;
       }
 
       // All questions answered
       case 'elicitationComplete': {
-        const saved = msg.totalSaved;
-        document.getElementById('done-summary').textContent =
-          saved > 0
-            ? `${saved} Architectural Decision Record${saved !== 1 ? 's' : ''} saved to docs/adr/. Your project is fully initialized.`
-            : 'No ADRs were added during constraint elicitation. You can add them later via the ADR Browser.';
+        const saved   = msg.totalSaved;
+        const pending = msg.totalPending || 0;
+        let summary = saved > 0
+          ? `${saved} Architectural Decision Record${saved !== 1 ? 's' : ''} saved to docs/adr/.`
+          : 'No ADRs were added during constraint elicitation. You can add them later via the ADR Browser.';
+        if (pending > 0) {
+          summary += ` ${pending} of them ${pending === 1 ? 'is' : 'are'} awaiting Architect approval; ARCH.md will list ${pending === 1 ? 'it' : 'them'} once approved.`;
+        } else if (saved > 0) {
+          summary += ' ARCH.md constraints have been updated. Your project is fully initialized.';
+        }
+        document.getElementById('done-summary').textContent = summary;
         showScreen('screen-done');
         setDots('done');
         break;
@@ -626,8 +702,18 @@
 
       // Error
       case 'error':
-        document.getElementById('error-message').textContent = msg.message;
-        showScreen('screen-error');
+        if (msg.stage === 'constraints') {
+          // Stay on the current question so the answer isn't lost.
+          setInlineError(msg.message);
+          showCqState('cq-question');
+        } else if (msg.stage === 'draft') {
+          setInlineError(msg.message);
+          setDraftButtonsDisabled(false);
+          showCqState('cq-draft');
+        } else {
+          document.getElementById('error-message').textContent = msg.message;
+          showScreen('screen-error');
+        }
         break;
     }
   });
