@@ -14,7 +14,7 @@ import { ConstraintElicitationAgent } from "./agents/ConstraintElicitationAgent"
 import { ElicitationSession, WizardQuestion } from "./agents/ElicitationSession";
 import { ConstraintDraft } from "./prompts/constraintPrompts";
 import { adrFilename } from "./prompts/adrPrompts";
-import { ViolationDetail, ExtensionDetail, ADR, DiffSummary } from "./types";
+import { ViolationDetail, ExtensionDetail, ADR, AuditEntry, DiffSummary } from "./types";
 import { configureGrammarDir } from "./parsing/TreeSitterExtractor";
 
 let statusBar: StatusBarManager;
@@ -75,6 +75,9 @@ export function activate(context: vscode.ExtensionContext): void {
   register("blueprint.revertArch",     () => handleRevertArch());
 
   registerAutoReview(context);
+
+  const unsubscribe = AuditLog.onAppend(() => { void pushAuditTrail(); });
+  context.subscriptions.push({ dispose: unsubscribe });
 }
 
 function reportError(err: unknown): void {
@@ -122,6 +125,7 @@ async function refreshProviders(): Promise<void> {
   auditTrailProvider.refresh(adrs);
   statusBar.setPending(adrs.filter((a) => a.status === "proposed").length);
   statusBar.refreshIdle();
+  await pushAuditTrail();
 }
 
 async function checkInitialized(): Promise<void> {
@@ -376,22 +380,50 @@ async function handleHub(context: vscode.ExtensionContext): Promise<void> {
 
 // ── Audit trail ─────────────────────────────────────────────────────────────
 
+// Newest first (T52); embeddings stripped — the webview never needs them.
+async function auditTrailData(): Promise<{ adrs: Omit<ADR, "embedding">[]; entries: AuditEntry[] }> {
+  const adrStore = AdrStore.fromWorkspace();
+  const auditLog = AuditLog.fromWorkspace();
+  const [adrs, entries] = await Promise.all([
+    adrStore ? adrStore.getAll() : Promise.resolve([] as ADR[]),
+    auditLog ? auditLog.getAll() : Promise.resolve([] as AuditEntry[]),
+  ]);
+  const newestFirst = <T extends { timestamp: string }>(a: T, b: T) =>
+    new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+  return {
+    adrs:    adrs.map(({ embedding: _omit, ...rest }) => rest).sort(newestFirst),
+    entries: [...entries].sort(newestFirst),
+  };
+}
+
+// Live refresh: re-send data to the audit trail panel if it is open.
+let auditTrailReady = false;
+async function pushAuditTrail(): Promise<void> {
+  const panel = BlueprintPanel.get("auditTrail");
+  if (!panel || !auditTrailReady) { return; }
+  panel.postMessage({ command: "load", ...(await auditTrailData()) });
+}
+
 async function handleViewAuditTrail(context: vscode.ExtensionContext): Promise<void> {
+  const existing = BlueprintPanel.get("auditTrail");
   const panel = BlueprintPanel.show("auditTrail", context.extensionUri);
+  if (existing) { await pushAuditTrail(); return; } // already loaded: just reveal + refresh (T50)
+
+  auditTrailReady = false; // a closed panel leaves the registry, so pushAuditTrail skips it
 
   // Register handler before loadMedia so the 'ready' signal from the webview is caught (T53)
   panel.setMessageHandler(async (msg) => {
-    if (msg.command === "ready") {
-      const adrStore = AdrStore.fromWorkspace();
-      const auditLog = AuditLog.fromWorkspace();
-      const [adrs, entries] = await Promise.all([
-        adrStore ? adrStore.getAll() : Promise.resolve([] as ADR[]),
-        auditLog ? auditLog.getAll() : Promise.resolve([]),
-      ]);
-      panel.postMessage({ command: "load", adrs, entries });
-    }
-    if (msg.command === "openAdr") {
-      await openAdrFile(msg.adr as ADR);
+    switch (msg.command) {
+      case "ready":
+        auditTrailReady = true;
+        panel.postMessage({ command: "load", ...(await auditTrailData()) });
+        break;
+      case "openAdr":
+        await openAdrFile(msg.adr as ADR);
+        break;
+      case "openFile":
+        await openWorkspaceFile(msg.path as string);
+        break;
     }
   });
 
@@ -399,6 +431,18 @@ async function handleViewAuditTrail(context: vscode.ExtensionContext): Promise<v
 }
 
 // ── ARCH.md / ADR files ─────────────────────────────────────────────────────
+
+async function openWorkspaceFile(relativePath: string): Promise<void> {
+  const folders = vscode.workspace.workspaceFolders;
+  if (!folders?.length || !relativePath) { return; }
+  const uri = vscode.Uri.joinPath(folders[0].uri, relativePath);
+  try {
+    await vscode.workspace.fs.stat(uri);
+    await vscode.window.showTextDocument(uri, { preview: true });
+  } catch {
+    vscode.window.showWarningMessage(`BluePrint: ${relativePath} no longer exists in the workspace.`);
+  }
+}
 
 async function openArchMd(): Promise<void> {
   const store = FileStore.fromWorkspace();

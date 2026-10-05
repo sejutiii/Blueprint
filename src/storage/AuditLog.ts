@@ -4,9 +4,16 @@ import { AuditEntry } from "../types";
 // Append-only record of every architectural event (SRS 2.3 decision audit trail).
 // Lives in .blueprint/audit-log.json so it is version-controlled with the repo.
 let queue: Promise<unknown> = Promise.resolve();
+const listeners = new Set<(entry: AuditEntry) => void>();
 
 export class AuditLog {
   constructor(private readonly root: vscode.Uri) {}
+
+  /** Notified after every append, so open views can refresh live. Returns an unsubscribe function. */
+  static onAppend(listener: (entry: AuditEntry) => void): () => void {
+    listeners.add(listener);
+    return () => listeners.delete(listener);
+  }
 
   static fromWorkspace(): AuditLog | null {
     const folders = vscode.workspace.workspaceFolders;
@@ -38,6 +45,7 @@ export class AuditLog {
       entries.push(full);
       await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(this.root, ".blueprint"));
       await vscode.workspace.fs.writeFile(this.file, Buffer.from(JSON.stringify(entries, null, 2), "utf-8"));
+      listeners.forEach((l) => { try { l(full); } catch { /* a listener must not break logging */ } });
       return full;
     });
     queue = run.catch(() => undefined);

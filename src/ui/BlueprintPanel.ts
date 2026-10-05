@@ -60,6 +60,11 @@ export class BlueprintPanel {
     return instance;
   }
 
+  /** The open panel of this type, if any (used to push live updates). */
+  static get(type: PanelType): BlueprintPanel | undefined {
+    return BlueprintPanel.panels.get(type);
+  }
+
   setMessageHandler(handler: (msg: Record<string, unknown>) => void): void {
     this.messageHandler = handler;
   }

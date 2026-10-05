@@ -43,7 +43,7 @@ Legend: `[ ]` todo · `[x]` done · **SRS** = section/test-case it satisfies.
 ## Phase 3 — Exciting requirements & UI (SRS 2.3, 3.1)
 
 - [x] **E1 Pre-check "attach ADRs as context"** *(SRS 3.3.1 step 5)*: button that copies the prompt + retrieved ADRs as a ready-to-paste block. Not present today.
-- [ ] **E2 Decision audit trail** *(SRS 2.3)*: persist `.blueprint/audit-log.json` (`AuditEntry` type exists, unused) for compliance checks, extensions, ADR creation/approval/rejection, ARCH updates; searchable/filterable timeline with links to ADR and the diff summary that prompted it.
+- [x] **E2 Decision audit trail** *(SRS 2.3)*: persist `.blueprint/audit-log.json` (`AuditEntry` type exists, unused) for compliance checks, extensions, ADR creation/approval/rejection, ARCH updates; searchable/filterable timeline with links to ADR and the diff summary that prompted it.
 - [ ] **E3 ARCH.md Viewer** *(SRS 3.1)*: dedicated webview (the `archViewer` panel type is unused) with recently-touched sections highlighted, using R3 history. Currently just opens Markdown preview.
 - [x] **E4 ADR Browser search** *(SRS 3.1)*: search/filter command + status grouping that includes pending/rejected.
 - [ ] **E5 Non-git diff fallback** *(future_extensions #4)*: file-manifest snapshot on init; diff against it when the workspace isn't a git repo.
