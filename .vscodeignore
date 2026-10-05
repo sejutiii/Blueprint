@@ -1,8 +1,24 @@
 .vscode/**
 .vscode-test/**
 src/**
+test/**
 .gitignore
+.gitattributes
 .eslintrc.json
 esbuild.js
 tsconfig.json
+**/*.map
+**/*.ts.orig
+
+# Secrets — never package. The production build also refuses to embed API keys.
+.env
+.env.*
+
+# Planning / internal docs
+TASKS.md
+blueprint_project_plan.md
+implementation_details.txt
+future_extensions.txt
+
+# Runtime dependencies: see TASKS.md B11 — native/WASM deps are not yet packaged.
 node_modules/**

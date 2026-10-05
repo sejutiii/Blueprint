@@ -11,6 +11,7 @@ Legend: `[ ]` todo · `[x]` done · **SRS** = section/test-case it satisfies.
 - **D3 — Keep RBAC** (SRS 3.2.5) and **Tree-sitter** parsing (SRS 3.2.3).
 - **D5 — Wizard follow-ups.** The 5 topic questions stay; each answer may yield one LLM-generated follow-up (same LLM call as the analysis, max one level deep, so at most 10 questions).
 - **D6 — Regeneration is Architect-only** (a whole-document rewrite doesn't fit the per-ADR approval queue). **Viewer highlights the last 5 recorded changes** (not a time window).
+- **D7 — Bring your own key in public builds.** The built-in default key exists only in local dev builds (from `.env`).
 - **D4 — Orchestrator split kept** (`src/orchestrator/Orchestrator.ts`): pipelines live there, `extension.ts` is UI only.
 
 ## Phase 1 — Bugs & correctness (fix before adding features)
@@ -29,7 +30,7 @@ Legend: `[ ]` todo · `[x]` done · **SRS** = section/test-case it satisfies.
 - [x] **B13** BluePrint's own artifacts (`.blueprint/`, `docs/adr/`, `docs/ARCH.md`) were included in the reviewed diff and sent to the LLM. *(fixed — `isReviewable` filter)*
 - [x] **B14** Webviews used `alert()`, which VS Code webviews block. *(removed everywhere)*
 - [ ] **B15** No ESLint config exists, so `npm run lint` fails.
-- [ ] **B12** Security: `.env` bakes a real default API key into `dist/extension.js`. Guarantee it can never be in a published VSIX (production build must ignore `.env`); document rotating the current key.
+- [x] **B12** Security: production builds never read `.env`, and fail if the bundle contains anything key-shaped; `.env` (and tests/planning docs) excluded from the VSIX — previously `.env` itself would have been packaged. Public users bring their own key; the wizard links to each provider's key page and validates the key with one request before saving it. *Rotate the current dev key if any build or VSIX was ever shared.*
 
 ## Phase 2 — Missing normal requirements (SRS 2.1)
 

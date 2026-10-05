@@ -4,7 +4,7 @@ import { BlueprintPanel } from "./ui/BlueprintPanel";
 import { AdrTreeProvider } from "./ui/AdrTreeProvider";
 import { AuditTrailTreeProvider } from "./ui/AuditTrailTreeProvider";
 import { StatusBarManager } from "./ui/StatusBarManager";
-import { LLMClient, Provider, PROVIDER_LABELS } from "./llm/LLMClient";
+import { LLMClient, Provider, PROVIDER_LABELS, PROVIDER_KEY_PAGES } from "./llm/LLMClient";
 import { FileStore } from "./storage/FileStore";
 import { AdrStore } from "./storage/AdrStore";
 import { AuditLog } from "./storage/AuditLog";
@@ -206,6 +206,7 @@ async function handleInit(context: vscode.ExtensionContext): Promise<void> {
   const defaultConfig    = LLMClient.getDefault();
   panel.postMessage({
     command: "init",
+    keyPages: PROVIDER_KEY_PAGES,
     hasProvider: !!existingClient,
     provider: existingProvider ?? null,
     hasDefault: !!defaultConfig,
@@ -231,9 +232,25 @@ async function handleInit(context: vscode.ExtensionContext): Promise<void> {
     try {
       switch (message.command) {
 
-        case "saveProvider":
-          await LLMClient.saveToSecrets(context.secrets, message.provider as Provider, message.apiKey as string);
+        case "saveProvider": {
+          // The key is only stored once a real request with it has succeeded.
+          const provider = message.provider as Provider;
+          const apiKey   = (message.apiKey as string).trim();
+          const problem  = await new LLMClient(provider, apiKey).validate();
+          if (problem) {
+            panel.postMessage({ command: "providerError", message: problem });
+          } else {
+            await LLMClient.saveToSecrets(context.secrets, provider, apiKey);
+            panel.postMessage({ command: "providerSaved", provider, label: PROVIDER_LABELS[provider] });
+          }
           break;
+        }
+
+        case "openKeyPage": {
+          const page = PROVIDER_KEY_PAGES[message.provider as Provider];
+          if (page) { await vscode.env.openExternal(vscode.Uri.parse(page.url)); }
+          break;
+        }
 
         case "useDefault":
           if (!(await LLMClient.useDefault(context.secrets))) {

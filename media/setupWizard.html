@@ -213,6 +213,10 @@
       color: var(--vscode-editorInfo-foreground, var(--vscode-foreground));
     }
 
+    .key-help { font-size: 11px; color: var(--vscode-descriptionForeground); margin-top: 6px; }
+    .key-help a { color: var(--vscode-textLink-foreground); text-decoration: none; }
+    .key-help a:hover { text-decoration: underline; }
+
     .followup-context {
       font-size: 11px;
       color: var(--vscode-descriptionForeground);
@@ -292,7 +296,13 @@
       <div class="field">
         <label for="api-key-input">API Key</label>
         <input type="password" id="api-key-input" placeholder="Paste your API key here" autocomplete="off" />
+        <p class="key-help" id="key-help">
+          <span id="key-help-text"></span>
+          <a href="#" id="key-help-link">Get a key ↗</a>
+        </p>
       </div>
+
+      <div id="provider-error" class="inline-error hidden"></div>
 
       <div class="actions">
         <button id="btn-provider-next">Next →</button>
@@ -500,14 +510,51 @@
   });
 
   // ── Screen 1: Provider ─────────────────────────────
+  let keyPages = {};
+
+  function updateKeyHelp() {
+    const provider = document.getElementById('provider-select').value;
+    const page = keyPages[provider];
+    document.getElementById('key-help').classList.toggle('hidden', !page);
+    if (!page) return;
+    document.getElementById('key-help-text').textContent = page.free
+      ? 'Free keys are available and take about a minute to create.'
+      : 'This provider requires a paid account.';
+  }
+
+  function setProviderError(message) {
+    const box = document.getElementById('provider-error');
+    box.textContent = message || '';
+    box.classList.toggle('hidden', !message);
+  }
+
+  document.getElementById('provider-select').addEventListener('change', () => {
+    setProviderError('');
+    updateKeyHelp();
+  });
+
+  document.getElementById('key-help-link').addEventListener('click', (e) => {
+    e.preventDefault();
+    vscode.postMessage({ command: 'openKeyPage', provider: document.getElementById('provider-select').value });
+  });
+
   document.getElementById('btn-provider-next').addEventListener('click', () => {
     const provider = document.getElementById('provider-select').value;
     const apiKey   = document.getElementById('api-key-input').value.trim();
     if (!apiKey) { document.getElementById('api-key-input').focus(); return; }
+    setProviderError('');
+    const btn = document.getElementById('btn-provider-next');
+    btn.disabled = true;
+    btn.textContent = 'Checking key…';
+    // Wait for the host to confirm the key works (providerSaved / providerError).
     vscode.postMessage({ command: 'saveProvider', provider, apiKey });
-    showScreen('screen-description');
-    setDots(2);
   });
+
+  function resetProviderButton() {
+    const btn = document.getElementById('btn-provider-next');
+    btn.disabled = false;
+    btn.textContent = 'Next →';
+  }
 
   // ── Screen 2: Description ──────────────────────────
   document.getElementById('btn-description-back').addEventListener('click', () => {
@@ -609,7 +656,22 @@
     switch (msg.command) {
 
       // Initialise: skip provider step if already configured
+      case 'providerSaved':
+        resetProviderButton();
+        document.getElementById('api-key-input').value = '';
+        showScreen('screen-description');
+        setDots(2);
+        break;
+
+      case 'providerError':
+        resetProviderButton();
+        setProviderError(msg.message);
+        document.getElementById('api-key-input').focus();
+        break;
+
       case 'init':
+        keyPages = msg.keyPages || {};
+        updateKeyHelp();
         if (msg.hasProvider) {
           if (msg.provider) document.getElementById('provider-select').value = msg.provider;
           showScreen('screen-description');

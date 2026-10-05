@@ -12,6 +12,15 @@ export const PROVIDER_LABELS: Record<Provider, string> = {
   openai: "OpenAI",
 };
 
+// Where a developer gets a key for each provider (shown in the setup wizard).
+export const PROVIDER_KEY_PAGES: Record<Provider, { url: string; free: boolean }> = {
+  gemini:     { url: "https://aistudio.google.com/apikey", free: true },
+  groq:       { url: "https://console.groq.com/keys", free: true },
+  openrouter: { url: "https://openrouter.ai/keys", free: true },
+  anthropic:  { url: "https://console.anthropic.com/settings/keys", free: false },
+  openai:     { url: "https://platform.openai.com/api-keys", free: false },
+};
+
 const DEFAULT_MODELS: Record<Provider, string> = {
   gemini: "gemini-2.0-flash",
   groq: "llama-3.3-70b-versatile",
@@ -144,6 +153,30 @@ export class LLMClient {
     const text = data.content?.filter((c) => typeof c.text === "string").map((c) => c.text).join("");
     if (!text) { throw new Error("Anthropic returned an empty response."); }
     return text;
+  }
+
+  /**
+   * Make one tiny request to confirm the key works before it is saved, and turn the common
+   * failures into an actionable message. Returns null on success.
+   */
+  async validate(): Promise<string | null> {
+    try {
+      await this.complete("You are a connectivity check. Reply with the single word OK.", "ping");
+      return null;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const label   = PROVIDER_LABELS[this.provider];
+      if (/\b(401|403)\b/.test(message) || /API key not valid|invalid.*key|unauthori[sz]ed/i.test(message)) {
+        return `${label} rejected this API key. Check that you copied the whole key and that it belongs to ${label}.`;
+      }
+      if (/\b429\b/.test(message)) {
+        return `${label} accepted the key but is rate-limiting it right now (HTTP 429). Wait a minute and try again.`;
+      }
+      if (/\b404\b/.test(message)) {
+        return `${label} could not find the model "${this.model}" for this key (HTTP 404). The key may not have access to it.`;
+      }
+      return `Could not reach ${label}: ${message}`;
+    }
   }
 
   static async fromSecrets(secrets: vscode.SecretStorage): Promise<LLMClient | null> {
