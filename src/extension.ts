@@ -442,10 +442,20 @@ async function handlePreCheck(context: vscode.ExtensionContext): Promise<void> {
       case "check": {
         panel.postMessage({ command: "checking" });
         try {
-          const { result, retrievedAdrs } = await orchestrator.preCheck(msg.promptText as string);
-          panel.postMessage({ command: "result", result, retrievedAdrs });
+          const { result, adrs } = await orchestrator.preCheck(msg.promptText as string);
+          panel.postMessage({ command: "result", result, adrs });
         } catch (err) {
           panel.postMessage({ command: "error", message: err instanceof Error ? err.message : String(err) });
+        }
+        break;
+      }
+      case "copyWithContext": {
+        try {
+          const text = await orchestrator.promptWithContext(msg.promptText as string, (msg.adrIds ?? []) as string[]);
+          await vscode.env.clipboard.writeText(text);
+          panel.postMessage({ command: "copied", adrCount: ((msg.adrIds ?? []) as string[]).length });
+        } catch (err) {
+          panel.postMessage({ command: "copyFailed", message: err instanceof Error ? err.message : String(err) });
         }
         break;
       }

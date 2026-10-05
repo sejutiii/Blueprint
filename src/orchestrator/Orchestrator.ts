@@ -10,7 +10,7 @@ import { ComplianceAgent } from "../agents/ComplianceAgent";
 import { DiffSummarizer } from "../agents/DiffSummarizer";
 import { RetrievalAgent } from "../agents/RetrievalAgent";
 import { PreCheckAgent } from "../agents/PreCheckAgent";
-import { PreCheckResult } from "../prompts/preCheckPrompts";
+import { PreCheckResult, buildPromptWithContext } from "../prompts/preCheckPrompts";
 import { ConstraintDraft } from "../prompts/constraintPrompts";
 import { DecisionService, ProposeResult } from "../services/DecisionService";
 import {
@@ -28,6 +28,18 @@ export type ReviewMode = "full" | "violations" | "extensions";
 export type ReviewOutcome =
   | { kind: "noDiff" }
   | { kind: "result"; result: ComplianceResult; diffSummary: DiffSummary };
+
+export interface PreCheckAdr {
+  adr: Omit<ADR, "embedding">;
+  score: number;
+  relevant: boolean; // cleared the relevance threshold
+  cited: boolean;    // referenced by one of the conflicts
+}
+
+export interface PreCheckOutcome {
+  result: PreCheckResult;
+  adrs: PreCheckAdr[];
+}
 
 export interface OrchestratorHooks {
   onState(state: OrchestratorState): void;
@@ -130,13 +142,23 @@ export class Orchestrator {
 
   // ── PROMPT_SUBMITTED ──────────────────────────────────────────────────────
 
-  async preCheck(promptText: string): Promise<{ result: PreCheckResult; retrievedAdrs: ADR[] }> {
+  async preCheck(promptText: string): Promise<PreCheckOutcome> {
     const { adrStore, blueprint, audit, access } = await this.requireInitialized();
     const llm = await this.requireLlm();
 
-    const allAdrs      = await adrStore.getAll();
-    const relevantAdrs = await new RetrievalAgent().retrieve(promptText, allAdrs, blueprint, TOP_K, adrStore);
-    const result       = await new PreCheckAgent(llm).check(promptText, blueprint, relevantAdrs);
+    const allAdrs = await adrStore.getAll();
+    const { results: scored } = await new RetrievalAgent().retrieveScored(promptText, allAdrs, blueprint, TOP_K, adrStore);
+
+    // The agent sees the full top-K (recall matters for spotting conflicts); the developer is
+    // shown which of those actually cleared the relevance bar, plus any the agent cited.
+    const result = await new PreCheckAgent(llm).check(promptText, blueprint, scored.map((s) => s.adr));
+    const citedIds = new Set(
+      result.conflicts.flatMap((c) => [...c.constraintId.matchAll(/ADR-?(\d+)/gi)].map((m) => m[1].padStart(4, "0")))
+    );
+    const adrs: PreCheckAdr[] = scored.map(({ adr, score, relevant }) => {
+      const { embedding: _omit, ...rest } = adr;
+      return { adr: rest, score, relevant, cited: citedIds.has(adr.id) };
+    });
 
     await audit?.append({
       eventType: "pre_check",
@@ -145,7 +167,15 @@ export class Orchestrator {
         : `Pre-check clean for prompt: ${promptText.slice(0, 80)}`,
       actor: (await access.resolveIdentity()) ?? undefined,
     });
-    return { result, retrievedAdrs: relevantAdrs };
+    return { result, adrs };
+  }
+
+  /** The prompt plus the chosen ADRs and the ARCH.md constraints, ready to paste into any AI assistant. */
+  async promptWithContext(promptText: string, adrIds: string[]): Promise<string> {
+    const { adrStore, blueprint } = await this.requireInitialized();
+    const wanted = new Set(adrIds);
+    const adrs   = (await adrStore.getAll()).filter((a) => wanted.has(a.id));
+    return buildPromptWithContext(promptText, adrs, blueprint.constraints);
   }
 
   // ── CODE_GENERATED / MANUAL_REVIEW_REQUESTED ──────────────────────────────

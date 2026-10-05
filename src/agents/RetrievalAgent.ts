@@ -12,6 +12,18 @@ const STOPWORDS = new Set([
 // Weight given to semantic (embedding) similarity vs. lexical (TF-IDF) similarity
 // when both are available. Equal-weighted blend: neither signal dominates.
 const SEMANTIC_WEIGHT = 0.5;
+const COMPONENT_BOOST = 0.15;
+
+// Minimum score for an ADR to be presented as "relevant". Calibrated on sample prompts with
+// all-MiniLM-L6-v2: clearly related prompt/ADR pairs blended to ~0.13-0.18, unrelated ones
+// stayed <= ~0.08. Lexical-only scoring (model unavailable) gets its own bar.
+export const RELEVANCE_THRESHOLD = { blended: 0.10, lexical: 0.08 } as const;
+
+export interface ScoredAdr {
+  adr: ADR;
+  score: number;
+  relevant: boolean;
+}
 
 export class RetrievalAgent {
   constructor(private readonly embeddings: EmbeddingService = new EmbeddingService()) {}
@@ -34,11 +46,30 @@ export class RetrievalAgent {
   ): Promise<ADR[]> {
     // Only binding decisions count as context — pending, rejected and retired ADRs must not
     // be used to judge new code.
-    adrs = adrs.filter((a) => a.status === "accepted");
-    if (adrs.length <= topK) { return adrs; }
-    if (!query.trim())       { return adrs.slice(0, topK); }
+    const accepted = adrs.filter((a) => a.status === "accepted");
+    if (accepted.length <= topK) { return accepted; } // nothing to rank (T26)
+    if (!query.trim())           { return accepted.slice(0, topK); }
 
-    const adrTexts = adrs.map(RetrievalAgent.adrToText);
+    const { results } = await this.retrieveScored(query, accepted, blueprint, topK, adrStore);
+    return results.map((r) => r.adr);
+  }
+
+  /**
+   * Like `retrieve`, but always scores (no short-circuit for small ADR sets) and returns each
+   * ADR's score plus whether it clears the relevance threshold — used where the developer is
+   * shown "relevant ADRs", so barely-related ones aren't presented as relevant.
+   */
+  async retrieveScored(
+    query: string,
+    adrs: ADR[],
+    blueprint: ArchBlueprint | null,
+    topK = 5,
+    adrStore?: AdrStore | null
+  ): Promise<{ results: ScoredAdr[]; semantic: boolean }> {
+    const accepted = adrs.filter((a) => a.status === "accepted");
+    if (!accepted.length || !query.trim()) { return { results: [], semantic: false }; }
+
+    const adrTexts = accepted.map(RetrievalAgent.adrToText);
     const corpus   = [...adrTexts, query];
     const vocab    = RetrievalAgent.buildVocabulary(corpus);
     const idf      = RetrievalAgent.computeIdf(corpus, vocab);
@@ -48,12 +79,13 @@ export class RetrievalAgent {
     const componentNames = (blueprint?.components ?? [])
       .map((c) => c.name.toLowerCase());
 
-    const queryLower = query.toLowerCase();
+    const queryLower     = query.toLowerCase();
     const queryEmbedding = await this.embeddings.embed(query);
+    let semantic = false;
 
     const scored: { adr: ADR; score: number }[] = [];
-    for (let i = 0; i < adrs.length; i++) {
-      const adr = adrs[i];
+    for (let i = 0; i < accepted.length; i++) {
+      const adr    = accepted[i];
       const adrVec = RetrievalAgent.tfidf(adrTexts[i], vocab, idf);
       let score    = RetrievalAgent.cosine(queryVec, adrVec);
 
@@ -62,6 +94,7 @@ export class RetrievalAgent {
         if (adrEmbedding && adrEmbedding.length === queryEmbedding.length) {
           const semanticScore = RetrievalAgent.cosineArrays(queryEmbedding, adrEmbedding);
           score = (1 - SEMANTIC_WEIGHT) * score + SEMANTIC_WEIGHT * semanticScore;
+          semantic = true;
         }
       }
 
@@ -69,17 +102,21 @@ export class RetrievalAgent {
       // Boost when both the ADR and the query mention the same component
       for (const name of componentNames) {
         if (name.length >= 3 && adrLower.includes(name) && queryLower.includes(name)) {
-          score += 0.15;
+          score += COMPONENT_BOOST;
         }
       }
 
       scored.push({ adr, score });
     }
 
-    return scored
-      .sort((a, b) => b.score - a.score)
-      .slice(0, topK)
-      .map((s) => s.adr);
+    const threshold = semantic ? RELEVANCE_THRESHOLD.blended : RELEVANCE_THRESHOLD.lexical;
+    return {
+      semantic,
+      results: scored
+        .sort((a, b) => b.score - a.score)
+        .slice(0, topK)
+        .map((s) => ({ ...s, relevant: s.score >= threshold })),
+    };
   }
 
   /** Returns the ADR's cached embedding, generating and persisting one if missing/stale. */

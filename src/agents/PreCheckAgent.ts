@@ -37,6 +37,9 @@ export class PreCheckAgent {
       }))
       .filter((c) => c.description.trim().length > 0);
 
-    return { hasConflicts: conflicts.length > 0, conflicts };
+    const revisedPrompt = str(obj.revisedPrompt).trim();
+    return conflicts.length > 0 && revisedPrompt
+      ? { hasConflicts: true, conflicts, revisedPrompt }
+      : { hasConflicts: conflicts.length > 0, conflicts };
   }
 }
