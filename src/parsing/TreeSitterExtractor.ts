@@ -3,10 +3,14 @@
 // method inside an existing class is reported, but the unchanged class around it is not.
 import * as path from "path";
 
-// web-tree-sitter is loaded lazily and kept external to the bundle: it locates its own
-// tree-sitter.wasm relative to its module file.
+// web-tree-sitter is bundled into extension.js and loaded lazily. Its runtime (tree-sitter.wasm)
+// and the grammar .wasm files are copied into dist/ by esbuild.js; `configureTreeSitter` points
+// at them. Outside the extension (scripts, tests) both fall back to node_modules.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type TSParser = any;
+
+/** Grammars shipped with the extension — keep in sync with GRAMMARS in esbuild.js. */
+export const SUPPORTED_GRAMMARS = ["typescript", "tsx", "javascript", "python", "java", "go", "c_sharp", "rust"] as const;
 
 const LANGUAGE_BY_EXT: Record<string, string> = {
   ".ts": "typescript", ".mts": "typescript", ".cts": "typescript",
@@ -47,12 +51,14 @@ export function languageForFile(file: string): string | null {
 }
 
 let grammarDir: string | null = null;
+let runtimeDir: string | null = null;
 let initPromise: Promise<TSParser | null> | null = null;
 const languages = new Map<string, Promise<unknown | null>>();
 
-/** Point the extractor at the grammar .wasm files (called on activation with the extension's path). */
-export function configureGrammarDir(dir: string): void {
-  grammarDir = dir;
+/** Called on activation: where tree-sitter.wasm and the grammar .wasm files live (dist/). */
+export function configureTreeSitter(dirs: { runtimeDir: string; grammarDir: string }): void {
+  runtimeDir = dirs.runtimeDir;
+  grammarDir = dirs.grammarDir;
 }
 
 function resolveGrammarDir(): string {
@@ -70,7 +76,9 @@ async function getParserModule(): Promise<TSParser | null> {
       try {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         const Parser = require("web-tree-sitter");
-        await Parser.init();
+        await Parser.init(runtimeDir
+          ? { locateFile: (name: string) => path.join(runtimeDir!, name) }
+          : undefined);
         return Parser;
       } catch (err) {
         console.error("BluePrint: Tree-sitter unavailable, using regex diff parsing.", err);

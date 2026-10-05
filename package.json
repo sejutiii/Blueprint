@@ -229,7 +229,9 @@
     "vscode:prepublish": "node esbuild.js --production",
     "build": "node esbuild.js",
     "watch": "node esbuild.js --watch",
-    "lint": "eslint src --ext ts"
+    "lint": "eslint src --ext ts",
+    "package": "node scripts/package.js",
+    "package:all": "node scripts/package.js --all"
   },
   "devDependencies": {
     "@types/markdown-it": "^14.2.0",
@@ -237,6 +239,7 @@
     "@types/vscode": "^1.85.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
+    "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.20.0",
     "eslint": "^8.0.0",
     "typescript": "^5.3.0"

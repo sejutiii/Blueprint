@@ -43,6 +43,19 @@ function assertNoSecrets(outfile) {
 
 const outfile = "dist/extension.js";
 
+// Tree-sitter runtime + the grammars TreeSitterExtractor supports (keep in sync with
+// SUPPORTED_GRAMMARS there). Copied rather than shipping all ~50 MB of tree-sitter-wasms.
+const GRAMMARS = ["typescript", "tsx", "javascript", "python", "java", "go", "c_sharp", "rust"];
+function copyWasmAssets() {
+  const dist = path.join(__dirname, "dist");
+  fs.mkdirSync(path.join(dist, "grammars"), { recursive: true });
+  fs.copyFileSync(require.resolve("web-tree-sitter/tree-sitter.wasm"), path.join(dist, "tree-sitter.wasm"));
+  const grammarSrc = path.join(path.dirname(require.resolve("tree-sitter-wasms/package.json")), "out");
+  for (const g of GRAMMARS) {
+    fs.copyFileSync(path.join(grammarSrc, `tree-sitter-${g}.wasm`), path.join(dist, "grammars", `tree-sitter-${g}.wasm`));
+  }
+}
+
 const ctx = esbuild.context({
   entryPoints: ["src/extension.ts"],
   bundle: true,
@@ -53,10 +66,11 @@ const ctx = esbuild.context({
   platform: "node",
   outfile,
   // @huggingface/transformers pulls in onnxruntime-node (native .node bindings) and
-  // sharp (native image bindings) — these can't be bundled into a single JS file,
-  // so leave them as real node_modules requires resolved at runtime. web-tree-sitter likewise
-  // loads its tree-sitter.wasm from next to its own module file.
-  external: ["vscode", "@huggingface/transformers", "onnxruntime-node", "onnxruntime-web", "sharp", "web-tree-sitter"],
+  // sharp (native image bindings) — these can't be bundled into a single JS file, so they stay
+  // real requires: node_modules in development, dist/node_modules in a packaged extension
+  // (staged per platform by scripts/package.js). web-tree-sitter is bundled; its .wasm files
+  // are copied to dist/ below.
+  external: ["vscode", "@huggingface/transformers", "onnxruntime-node", "onnxruntime-web", "sharp"],
   logLevel: "silent",
   define: {
     "process.env.BLUEPRINT_DEFAULT_PROVIDER": JSON.stringify(dotEnv.BLUEPRINT_DEFAULT_PROVIDER || ""),
@@ -65,6 +79,7 @@ const ctx = esbuild.context({
 });
 
 ctx.then(async (c) => {
+  copyWasmAssets();
   if (watch) {
     await c.watch();
     console.log("[watch] build finished, watching for changes...");

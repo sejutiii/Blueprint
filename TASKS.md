@@ -12,6 +12,7 @@ Legend: `[ ]` todo · `[x]` done · **SRS** = section/test-case it satisfies.
 - **D5 — Wizard follow-ups.** The 5 topic questions stay; each answer may yield one LLM-generated follow-up (same LLM call as the analysis, max one level deep, so at most 10 questions).
 - **D6 — Regeneration is Architect-only** (a whole-document rewrite doesn't fit the per-ADR approval queue). **Viewer highlights the last 5 recorded changes** (not a time window).
 - **D7 — Bring your own key in public builds.** The built-in default key exists only in local dev builds (from `.env`).
+- **D8 — Packaging:** one VSIX per platform + universal fallback; embedding model downloaded on first use (not bundled).
 - **D4 — Orchestrator split kept** (`src/orchestrator/Orchestrator.ts`): pipelines live there, `extension.ts` is UI only.
 
 ## Phase 1 — Bugs & correctness (fix before adding features)
@@ -26,7 +27,7 @@ Legend: `[ ]` todo · `[x]` done · **SRS** = section/test-case it satisfies.
 - [x] **B8** `StatusBarManager`: `setOk` timer is never cleared (races with later states) and `setIdle` doesn't reset the command rebound by `setViolationFound`. *SRS T4*
 - [x] **B9** Re-running `blueprint.init` on an initialized project silently overwrites ARCH.md. Add an explicit confirm. *SRS T15*
 - [x] **B10** Retrieval should consider only `accepted` ADRs (not proposed/rejected/deprecated/superseded).
-- [ ] **B11** `.vscodeignore` excludes `node_modules/**`, but `@huggingface/transformers` / `onnxruntime-node` / `sharp` are esbuild externals → in a packaged VSIX local embeddings **always** fail and silently fall back to TF-IDF. Ship the runtime deps (or pre-bundle the model) and verify with `vsce ls`. *SRS 4.2*
+- [x] **B11** Packaging: per-platform VSIXs (`npm run package` / `package:all`) — win32-x64/arm64, linux-x64/arm64, darwin-arm64 each stage only their onnxruntime binary into dist/node_modules (8–28 MB); a 1.2 MB universal package covers other platforms (Intel Mac, etc.) with lexical-only retrieval. web-tree-sitter bundled, 8 grammars copied to dist/. Quantized model (q8, 23 MB) downloaded on first use into VS Code global storage. Verified: embeddings load from the unpacked VSIX with no node_modules nearby.
 - [x] **B13** BluePrint's own artifacts (`.blueprint/`, `docs/adr/`, `docs/ARCH.md`) were included in the reviewed diff and sent to the LLM. *(fixed — `isReviewable` filter)*
 - [x] **B14** Webviews used `alert()`, which VS Code webviews block. *(removed everywhere)*
 - [ ] **B15** No ESLint config exists, so `npm run lint` fails.

@@ -15,7 +15,8 @@ import { ElicitationSession, WizardQuestion } from "./agents/ElicitationSession"
 import { ConstraintDraft } from "./prompts/constraintPrompts";
 import { adrFilename } from "./prompts/adrPrompts";
 import { ViolationDetail, ExtensionDetail, ADR, AuditEntry, DiffSummary } from "./types";
-import { configureGrammarDir } from "./parsing/TreeSitterExtractor";
+import { configureTreeSitter } from "./parsing/TreeSitterExtractor";
+import { configureEmbeddings } from "./embeddings/EmbeddingService";
 import { splitSections, recentHighlights, RECENT_CHANGES } from "./ui/archView";
 import MarkdownIt from "markdown-it";
 
@@ -34,7 +35,10 @@ const previewContents = new Map<string, string>();
 const previewChanged  = new vscode.EventEmitter<vscode.Uri>();
 
 export function activate(context: vscode.ExtensionContext): void {
-  configureGrammarDir(path.join(context.extensionPath, "node_modules", "tree-sitter-wasms", "out"));
+  const dist = path.join(context.extensionPath, "dist");
+  configureTreeSitter({ runtimeDir: dist, grammarDir: path.join(dist, "grammars") });
+  // Model weights live in per-extension global storage, so they survive extension updates.
+  configureEmbeddings({ cacheDir: path.join(context.globalStorageUri.fsPath, "models") });
   extensionUri = context.extensionUri;
 
   adrTreeProvider    = new AdrTreeProvider();

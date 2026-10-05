@@ -20,5 +20,8 @@ blueprint_project_plan.md
 implementation_details.txt
 future_extensions.txt
 
-# Runtime dependencies: see TASKS.md B11 — native/WASM deps are not yet packaged.
+# Runtime dependencies are staged per platform into dist/node_modules by scripts/package.js;
+# the root node_modules is never packaged.
 node_modules/**
+scripts/**
+out/**

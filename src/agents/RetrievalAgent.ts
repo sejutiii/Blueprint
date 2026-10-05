@@ -14,8 +14,8 @@ const STOPWORDS = new Set([
 const SEMANTIC_WEIGHT = 0.5;
 const COMPONENT_BOOST = 0.15;
 
-// Minimum score for an ADR to be presented as "relevant". Calibrated on sample prompts with
-// all-MiniLM-L6-v2: clearly related prompt/ADR pairs blended to ~0.13-0.18, unrelated ones
+// Minimum score for an ADR to be presented as "relevant". Calibrated on 6 sample prompts with
+// all-MiniLM-L6-v2 (q8): clearly related prompt/ADR pairs blended to >= 0.14, unrelated ones
 // stayed <= ~0.08. Lexical-only scoring (model unavailable) gets its own bar.
 export const RELEVANCE_THRESHOLD = { blended: 0.10, lexical: 0.08 } as const;
 
