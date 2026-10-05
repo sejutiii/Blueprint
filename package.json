@@ -85,6 +85,16 @@
         "command": "blueprint.regenerateArch",
         "title": "BluePrint: Regenerate ARCH.md from Codebase",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "blueprint.addDecision",
+        "title": "BluePrint: Add Decision (ADR)",
+        "icon": "$(add)"
+      },
+      {
+        "command": "blueprint.guidedQuestions",
+        "title": "BluePrint: Answer Constraint Questions",
+        "icon": "$(question)"
       }
     ],
     "viewsContainers": {
@@ -167,9 +177,22 @@
         {
           "command": "blueprint.regenerateArch",
           "when": "blueprint.initialized && blueprint.isArchitect"
+        },
+        {
+          "command": "blueprint.addDecision",
+          "when": "blueprint.initialized"
+        },
+        {
+          "command": "blueprint.guidedQuestions",
+          "when": "blueprint.initialized"
         }
       ],
       "view/title": [
+        {
+          "command": "blueprint.addDecision",
+          "when": "view == blueprint.adrBrowser",
+          "group": "navigation@0"
+        },
         {
           "command": "blueprint.searchAdrs",
           "when": "view == blueprint.adrBrowser",
@@ -189,6 +212,11 @@
           "command": "blueprint.viewAuditTrail",
           "when": "view == blueprint.auditTrail",
           "group": "navigation"
+        },
+        {
+          "command": "blueprint.guidedQuestions",
+          "when": "view == blueprint.adrBrowser",
+          "group": "overflow"
         }
       ],
       "view/item/context": [

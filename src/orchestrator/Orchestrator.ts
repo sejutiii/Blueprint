@@ -6,7 +6,7 @@ import { AuditLog } from "../storage/AuditLog";
 import { AccessControl } from "../access/AccessControl";
 import { Role, buildRolesManifest, rolesConfigured } from "../access/roles";
 import { ArchitectureAgent } from "../agents/ArchitectureAgent";
-import { ConstraintElicitationAgent } from "../agents/ConstraintElicitationAgent";
+import { ConstraintElicitationAgent, DecisionDraftResult } from "../agents/ConstraintElicitationAgent";
 import { ComplianceAgent } from "../agents/ComplianceAgent";
 import { DiffSummarizer } from "../agents/DiffSummarizer";
 import { RetrievalAgent } from "../agents/RetrievalAgent";
@@ -17,7 +17,7 @@ import { DecisionService, ProposeResult } from "../services/DecisionService";
 import { buildCodebaseSnapshot } from "../parsing/CodebaseSnapshot";
 import { renderArchMd } from "../prompts/archPrompts";
 import {
-  ADR, ArchBlueprint, ComplianceResult, DiffSummary, ExtensionDetail, OrchestratorEvent, ViolationDetail,
+  ADR, ArchBlueprint, ArchEffect, ComplianceResult, DiffSummary, ExtensionDetail, OrchestratorEvent, ViolationDetail,
 } from "../types";
 
 /** A failure with a message meant to be shown to the developer verbatim. */
@@ -37,6 +37,12 @@ export interface PreCheckAdr {
   score: number;
   relevant: boolean; // cleared the relevance threshold
   cited: boolean;    // referenced by one of the conflicts
+}
+
+export interface DecisionDraftOutcome {
+  result: DecisionDraftResult;
+  /** Accepted ADRs the new one could replace, most related first. */
+  candidates: Pick<ADR, "id" | "title" | "decision">[];
 }
 
 export interface PreCheckOutcome {
@@ -149,6 +155,52 @@ export class Orchestrator {
       decision:     draft.decision,
       consequences: draft.consequences,
       archEffect:   { kind: "add-constraint", constraint: draft.title },
+    });
+    this.hooks.onDataChanged();
+    return result;
+  }
+
+  // ── Add Decision: a decision or changed requirement in the developer's words ─
+
+  /**
+   * Drafts an ADR from free text. The most related accepted ADRs are offered to the model as
+   * candidates it might replace; all accepted ADRs come back (most related first) so the
+   * developer can pick a different one, or none, before saving.
+   */
+  async draftDecision(description: string): Promise<DecisionDraftOutcome> {
+    const { adrStore, blueprint } = await this.requireInitialized();
+    const llm = await this.requireLlm();
+
+    const accepted = (await adrStore.getAll()).filter((a) => a.status === "accepted");
+    const { results } = await new RetrievalAgent().retrieveScored(description, accepted, blueprint, accepted.length, adrStore);
+    const ranked  = results.length ? results.map((r) => r.adr) : accepted;
+    const related = ranked.slice(0, TOP_K);
+
+    const result = await new ConstraintElicitationAgent(llm).draftDecision(description, related);
+    return {
+      result,
+      candidates: ranked.map(({ id, title, decision }) => ({ id, title, decision })),
+    };
+  }
+
+  /** Saves an Add Decision draft; replacing an ADR swaps its ARCH.md constraint for the new one. */
+  async saveDecision(draft: ConstraintDraft, supersedes?: string): Promise<ProposeResult> {
+    const { decisions, adrStore } = this.workspace();
+    let archEffect: ArchEffect = { kind: "add-constraint", constraint: draft.title };
+    if (supersedes) {
+      const old = await adrStore.getById(supersedes);
+      const oldEffect = old?.archEffect;
+      // The old ADR's constraint line: what its own effect added, or failing that its title.
+      const replaces = oldEffect && oldEffect.kind !== "add-component" ? oldEffect.constraint : old?.title ?? "";
+      archEffect = { kind: "replace-constraint", constraint: draft.title, replaces };
+    }
+    const result = await decisions.propose({
+      title:        draft.title,
+      context:      draft.context,
+      decision:     draft.decision,
+      consequences: draft.consequences,
+      archEffect,
+      ...(supersedes ? { supersedes } : {}),
     });
     this.hooks.onDataChanged();
     return result;

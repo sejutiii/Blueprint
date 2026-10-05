@@ -73,6 +73,7 @@ npm run typecheck   # extension + test sources
 | Non-destructive ARCH.md patching (SRS 2.2) | `archmd.test.ts`: manual edits preserved byte-for-byte, widened tables, CRLF, duplicates are no-ops |
 | ARCH.md history and revert (SRS 2.1) | `archmd.test.ts`: snapshot before each change, revert is itself reversible |
 | Viewer highlights (SRS 3.1, D6) | `archmd.test.ts`: last 5 changes, whole-document changes |
+| Add Decision (D11) | `agents.test.ts`: draft parsing, replaced-id normalization, tentative flag, fallback draft; `decisions.test.ts`: new constraint, Architect replacement retires the old ADR and swaps its ARCH.md line, Developer replacement waits for approval, only accepted ADRs can be replaced, superseded ADRs leave review context; `archmd.test.ts`: `replaceConstraint` |
 | Wizard follow-ups (D5) | `decisions.test.ts`, `agents.test.ts` |
 | Pre-check context block (SRS 3.3.1 step 5) | `retrieval.test.ts` |
 | Regenerate from codebase (R4) | `snapshot.test.ts`, `agents.test.ts` (constraints never dropped) |
@@ -89,6 +90,13 @@ Run with F5, then open one of the projects in `test/`. A free Gemini or Groq key
 - [ ] Generate the architecture; the sidebar appears (T3).
 - [ ] Answer a concrete constraint ("We use PostgreSQL"): a draft appears, editable, and a follow-up question comes next. Save with an empty title → inline error.
 - [ ] Re-run Initialize: a confirmation dialog appears; after confirming, Revert ARCH.md lists the old version (T15).
+
+**Add Decision**
+- [ ] Close the wizard right after ARCH.md is generated. Sidebar **+** (or Hub → Add Decision) → "Answer the guided questions instead" reopens just the questions; ARCH.md is not regenerated.
+- [ ] Add Decision: `Uploaded files go to Amazon S3, not local disk.` → draft, "No — this is a new decision" preselected; save → new constraint in ARCH.md.
+- [ ] Add Decision: `Checkout must now offer both Stripe and PayPal.` → suggests replacing the Stripe ADR with a reason; save → old ADR shows "replaced by ADR-…" in the sidebar, ARCH.md line swapped, viewer highlights Constraints.
+- [ ] Add Decision: `Maybe we'll add Redis someday.` → tentative warning, still editable and savable.
+- [ ] As a Developer: a replacement is pending; the old ADR and ARCH.md change only after approval.
 
 **Compliance review**
 - [ ] Add a file that contradicts an ADR (e.g. a MongoDB client) and a new self-contained module, then Review: violations and new components appear together (D1).

@@ -35,7 +35,8 @@ class AdrItem extends vscode.TreeItem {
     super(adr.title, vscode.TreeItemCollapsibleState.None);
     const pending = adr.status === "proposed";
     // Architects get Approve/Reject buttons on pending items (menus check blueprint.isArchitect).
-    this.description = !pending ? `#${adr.id}`
+    this.description = adr.supersededBy ? `#${adr.id} · replaced by ADR-${adr.supersededBy}`
+      : !pending ? `#${adr.id}`
       : canApprove ? `#${adr.id} · needs your approval`
       : `#${adr.id} · waiting for an Architect`;
     this.tooltip = new vscode.MarkdownString(
@@ -91,7 +92,7 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrItem | vscode
     if (element) { return []; }
 
     if (this.adrs.length === 0) {
-      const empty = new vscode.TreeItem("No ADRs yet — run BluePrint: Initialize Project");
+      const empty = new vscode.TreeItem("No ADRs yet — click + above to add a decision");
       empty.iconPath = new vscode.ThemeIcon("info");
       return [empty];
     }

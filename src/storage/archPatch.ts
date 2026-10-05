@@ -99,6 +99,33 @@ export function addConstraint(markdown: string, constraint: string): PatchResult
   return { markdown: lines.join(eol), touched: [SECTION_CONSTRAINTS] };
 }
 
+/**
+ * Swap one Constraints bullet for another (a requirement changed). If the old bullet is gone
+ * (edited by hand, or never added) the new one is appended instead, so the decision still lands.
+ */
+export function replaceConstraint(markdown: string, oldConstraint: string, newConstraint: string): PatchResult {
+  const next = newConstraint.replace(/\s*\r?\n\s*/g, " ").trim();
+  const old  = oldConstraint.replace(/\s*\r?\n\s*/g, " ").trim().toLowerCase();
+  if (!next) { return { markdown, touched: [] }; }
+
+  const eol   = markdown.includes("\r\n") ? "\r\n" : "\n";
+  const lines = markdown.split(/\r?\n/);
+  const range = findSection(lines, SECTION_CONSTRAINTS);
+  if (range && old) {
+    for (let i = range.start + 1; i < range.end; i++) {
+      const bullet = lines[i].match(/^(\s*[-*]\s+)(.*)$/);
+      if (bullet && bullet[2].trim().toLowerCase() === old) {
+        // If the new constraint is already listed elsewhere, just drop the old line.
+        const body = lines.slice(range.start + 1, range.end);
+        const duplicate = body.some((l, j) => range.start + 1 + j !== i && l.replace(/^\s*[-*]\s+/, "").trim().toLowerCase() === next.toLowerCase());
+        if (duplicate) { lines.splice(i, 1); } else { lines[i] = `${bullet[1]}${next}`; }
+        return { markdown: lines.join(eol), touched: [SECTION_CONSTRAINTS] };
+      }
+    }
+  }
+  return addConstraint(markdown, next);
+}
+
 /** Refresh the "> Last updated:" line if present; leaves everything else untouched. */
 export function setLastUpdated(markdown: string, iso: string): string {
   return markdown.replace(/^> Last updated:.*$/m, `> Last updated: ${new Date(iso).toLocaleString()}`);

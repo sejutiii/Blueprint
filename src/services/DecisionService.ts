@@ -38,6 +38,14 @@ export class DecisionService {
     const { changedFiles, ...draft } = input;
     const proposedBy = actor.identity ?? undefined;
 
+    if (draft.supersedes) {
+      const old = await this.adrStore.getById(draft.supersedes);
+      if (!old) { throw new Error(`ADR-${draft.supersedes} not found, so it can't be replaced.`); }
+      if (old.status !== "accepted") {
+        throw new Error(`ADR-${old.id} is ${old.status}, not accepted, so there is nothing to replace.`);
+      }
+    }
+
     if (actor.role === "architect") {
       const adr = await this.adrStore.create({
         ...draft,
@@ -100,6 +108,19 @@ export class DecisionService {
   // Approval is the point at which a decision becomes real: ARCH.md is patched and the
   // ADR gets its local embedding so future retrievals can find it without any API call.
   private async finalize(adr: ADR, actor: string | undefined): Promise<void> {
+    // A replaced decision stops binding the moment its successor does: retrieval, reviews and
+    // pre-checks only use accepted ADRs. Skipped if it was retired meanwhile (e.g. another
+    // proposal replaced it first); the ARCH.md patch then simply appends the new constraint.
+    if (adr.supersedes) {
+      const old = await this.adrStore.getById(adr.supersedes);
+      if (old?.status === "accepted") {
+        await this.adrStore.update(old.id, { status: "superseded", supersededBy: adr.id });
+        await this.audit?.append({
+          eventType: "adr_superseded", summary: `ADR-${old.id} superseded by ADR-${adr.id}: ${old.title}`,
+          actor, adrId: old.id,
+        });
+      }
+    }
     if (adr.archEffect) {
       const touched = await this.fileStore.applyArchEffect(adr.archEffect, `ADR-${adr.id}: ${adr.title}`);
       if (touched.length) {

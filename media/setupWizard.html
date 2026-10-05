@@ -445,6 +445,7 @@
         <div class="success-icon">✓</div>
         <h2>Architecture Generated!</h2>
         <p id="arch-done-summary"></p>
+        <p style="margin-top:-12px">Not now? You can answer these questions later, or record any decision in your own words, with <strong>BluePrint: Add Decision</strong>.</p>
         <div class="btn-row">
           <button class="secondary" id="btn-skip-constraints">Done — View ARCH.md</button>
           <button id="btn-start-constraints">Surface Constraints →</button>
@@ -523,7 +524,7 @@
     <div id="screen-done" class="hidden">
       <div class="success-wrap">
         <div class="success-icon">✓</div>
-        <h2>Project Initialized!</h2>
+        <h2 id="done-title">Project Initialized!</h2>
         <p id="done-summary"></p>
         <div class="btn-row">
           <button id="btn-view-arch-done">Open ARCH.md →</button>
@@ -586,6 +587,7 @@
   }
 
   // ── Initial state ──────────────────────────────────
+  let constraintsOnly = false;
   setDots(1);
   showScreen('screen-provider');
 
@@ -911,6 +913,16 @@
         keyPages = msg.keyPages || {};
         roles = msg.roles || null;
         updateKeyHelp();
+        if (msg.mode === 'constraints') {
+          // Guided questions only (project already initialized): no provider/roles/ARCH.md steps.
+          constraintsOnly = true;
+          document.querySelector('.step-indicator').classList.add('hidden');
+          document.getElementById('done-title').textContent = 'Constraints recorded';
+          showScreen('screen-constraints');
+          showCqState('cq-analyzing');
+          vscode.postMessage({ command: 'startConstraints' });
+          break;
+        }
         if (msg.hasProvider) {
           if (msg.provider) document.getElementById('provider-select').value = msg.provider;
           afterProvider();
@@ -943,7 +955,7 @@
       // Begin constraint elicitation
       case 'showQuestion': {
         showScreen('screen-constraints');
-        setDots(STEPS.constraints);
+        if (!constraintsOnly) setDots(STEPS.constraints);
         setInlineError('');
         setDraftButtonsDisabled(false);
         setProgress(msg.index, msg.total, msg.isFollowUp);
@@ -988,11 +1000,11 @@
         const pending = msg.totalPending || 0;
         let summary = saved > 0
           ? `${saved} Architectural Decision Record${saved !== 1 ? 's' : ''} saved to docs/adr/.`
-          : 'No ADRs were added during constraint elicitation. You can add them later via the ADR Browser.';
+          : 'No ADRs were added from these questions. You can record decisions any time with BluePrint: Add Decision.';
         if (pending > 0) {
           summary += ` ${pending} of them ${pending === 1 ? 'is' : 'are'} awaiting Architect approval; ARCH.md will list ${pending === 1 ? 'it' : 'them'} once approved.`;
         } else if (saved > 0) {
-          summary += ' ARCH.md constraints have been updated. Your project is fully initialized.';
+          summary += constraintsOnly ? ' ARCH.md constraints have been updated.' : ' ARCH.md constraints have been updated. Your project is fully initialized.';
         }
         document.getElementById('done-summary').textContent = summary;
         showScreen('screen-done');

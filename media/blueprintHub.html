@@ -73,6 +73,7 @@
     .icon-violations { background: rgba(244, 67,  54,  0.12); }
     .icon-extensions { background: rgba(33,  150, 243, 0.12); }
     .icon-precheck   { background: rgba(76,  175, 80,  0.12); }
+    .icon-decision   { background: rgba(156, 39,  176, 0.12); }
 
     .card-body { flex: 1; min-width: 0; }
     .card-title { font-size: 13px; font-weight: 600; margin-bottom: 3px; }
@@ -124,6 +125,15 @@
     <span class="card-arrow">›</span>
   </button>
 
+  <button class="action-card" id="btn-decision" title="Record a decision, a new constraint, or a changed requirement as an ADR">
+    <div class="card-icon icon-decision">✚</div>
+    <div class="card-body">
+      <div class="card-title">Add Decision</div>
+      <div class="card-desc">Describe a decision or a changed requirement in your own words. BluePrint drafts the ADR and updates ARCH.md.</div>
+    </div>
+    <span class="card-arrow">›</span>
+  </button>
+
 <script nonce="{{nonce}}">
   const vscode = acquireVsCodeApi();
 
@@ -135,6 +145,9 @@
   });
   document.getElementById('btn-precheck').addEventListener('click', () => {
     vscode.postMessage({ command: 'openPreCheck' });
+  });
+  document.getElementById('btn-decision').addEventListener('click', () => {
+    vscode.postMessage({ command: 'openAddDecision' });
   });
 </script>
 </body>

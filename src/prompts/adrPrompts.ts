@@ -9,6 +9,8 @@ export function renderAdrMd(adr: ADR): string {
     `**Date:** ${date}`,
     adr.proposedBy ? `**Proposed by:** ${adr.proposedBy}` : "",
     adr.reviewedBy ? `**Reviewed by:** ${adr.reviewedBy}` : "",
+    adr.supersedes ? `**Supersedes:** ADR-${adr.supersedes}` : "",
+    adr.supersededBy ? `**Superseded by:** ADR-${adr.supersededBy}` : "",
   ].filter(Boolean).join("  \n");
 
   const review = adr.reviewNote

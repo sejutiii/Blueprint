@@ -123,6 +123,82 @@ describe("Orchestrator — Architect-only actions", () => {
   });
 });
 
+describe("Add Decision — replacing an existing decision", () => {
+  let dir: string;
+  let identity: string | null;
+  const orchestrator = new Orchestrator({} as never, { onState: () => {}, onDataChanged: () => {} });
+  const archMd = () => fs.readFileSync(path.join(dir, "docs", "ARCH.md"), "utf8");
+  const store  = () => new AdrStore(Uri.file(dir) as never);
+  const draft  = (title: string) => ({ title, context: "c", decision: `Decision: ${title}`, consequences: "q" });
+
+  beforeEach(async () => {
+    dir = tempDir();
+    __setWorkspaceRoot(dir);
+    identity = "lead@x.io";
+    vi.spyOn(AccessControl.prototype, "resolveIdentity").mockImplementation(async () => identity);
+    // Retrieval falls back to lexical scoring; no model download in tests.
+    vi.spyOn(EmbeddingService.prototype, "embed").mockResolvedValue(null);
+    await new FileStore(Uri.file(dir) as never).writeArchBlueprint(blueprint(), "Shop");
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    __setWorkspaceRoot(null);
+    removeDir(dir);
+  });
+
+  it("a new decision is added as a constraint", async () => {
+    const { adr, autoApproved } = await orchestrator.saveDecision(draft("Store uploads in Amazon S3"));
+    expect(autoApproved).toBe(true);
+    expect(adr.archEffect).toEqual({ kind: "add-constraint", constraint: "Store uploads in Amazon S3" });
+    expect(archMd()).toContain("- Store uploads in Amazon S3");
+  });
+
+  it("an Architect's replacement retires the old ADR and swaps its ARCH.md line", async () => {
+    const old = (await orchestrator.saveDecision(draft("Stripe is the only payment provider"))).adr;
+    const { adr } = await orchestrator.saveDecision(draft("Payments go through Stripe or PayPal"), old.id);
+
+    expect(adr).toMatchObject({ status: "accepted", supersedes: old.id });
+    expect(await store().getById(old.id)).toMatchObject({ status: "superseded", supersededBy: adr.id });
+    expect(archMd()).toContain("- Payments go through Stripe or PayPal");
+    expect(archMd()).not.toContain("Stripe is the only payment provider");
+    const md = fs.readdirSync(path.join(dir, "docs", "adr")).map((f) => fs.readFileSync(path.join(dir, "docs", "adr", f), "utf8")).join("\n");
+    expect(md).toContain(`**Superseded by:** ADR-${adr.id}`);
+    expect(md).toContain(`**Supersedes:** ADR-${old.id}`);
+    expect((await new AuditLog(Uri.file(dir) as never).getAll()).map((e) => e.eventType)).toContain("adr_superseded");
+  });
+
+  it("a Developer's replacement changes nothing until an Architect approves it", async () => {
+    const old = (await orchestrator.saveDecision(draft("Stripe is the only payment provider"))).adr;
+    fs.writeFileSync(path.join(dir, ".blueprint", "roles.json"), JSON.stringify({ architects: ["lead@x.io"], developers: ["dev@x.io"] }));
+
+    identity = "dev@x.io";
+    const { adr, autoApproved } = await orchestrator.saveDecision(draft("Payments go through Stripe or PayPal"), old.id);
+    expect(autoApproved).toBe(false);
+    expect((await store().getById(old.id))?.status).toBe("accepted");
+    expect(archMd()).toContain("Stripe is the only payment provider");
+
+    identity = "lead@x.io";
+    await orchestrator.approve(adr.id);
+    expect((await store().getById(old.id))?.status).toBe("superseded");
+    expect(archMd()).toContain("- Payments go through Stripe or PayPal");
+    expect(archMd()).not.toContain("Stripe is the only payment provider");
+  });
+
+  it("only an accepted ADR can be replaced", async () => {
+    await expect(orchestrator.saveDecision(draft("x"), "0042")).rejects.toThrow(/ADR-0042 not found/);
+    const old = (await orchestrator.saveDecision(draft("Old rule"))).adr;
+    await orchestrator.saveDecision(draft("Newer rule"), old.id);
+    await expect(orchestrator.saveDecision(draft("Newest rule"), old.id)).rejects.toThrow(/superseded, not accepted/);
+  });
+
+  it("superseded ADRs are no longer used as review context", async () => {
+    const old = (await orchestrator.saveDecision(draft("Stripe is the only payment provider"))).adr;
+    await orchestrator.saveDecision(draft("Payments go through Stripe or PayPal"), old.id);
+    const used = await new RetrievalAgent().retrieve("payments", await store().getAll(), blueprint());
+    expect(used.map((a) => a.id)).not.toContain(old.id);
+  });
+});
+
 describe("ADR files (T41–T43)", () => {
   let dir: string;
   let store: AdrStore;

@@ -126,6 +126,49 @@ describe("ComplianceAgent", () => {
   });
 });
 
+describe("ConstraintElicitationAgent.draftDecision (Add Decision)", () => {
+  const related = [adr("0003", "Stripe is the only payment provider", "All charges go through Stripe."), adr("0005", "Use PostgreSQL")];
+  const reply = (extra: object = {}) => JSON.stringify({
+    draft: { title: "Payments via Stripe or PayPal", context: "c", decision: "d", consequences: "q" }, tentative: false, ...extra,
+  });
+
+  it("sends the description and the related decisions, and returns the suggested replacement", async () => {
+    const llm = new FakeLLM([reply({ supersedes: "0003", supersedesReason: "Allows a second provider." })]);
+    const r = await new ConstraintElicitationAgent(llm.asClient()).draftDecision("We now also accept PayPal", related);
+    expect(llm.calls[0].user).toContain("[0003] Stripe is the only payment provider");
+    expect(llm.calls[0].user).toContain('"We now also accept PayPal"');
+    expect(r).toEqual({
+      draft: { title: "Payments via Stripe or PayPal", context: "c", decision: "d", consequences: "q" },
+      tentative: false, supersedes: "0003", supersedesReason: "Allows a second provider.",
+    });
+  });
+
+  it.each([["ADR-0003"], ["3"], [3]])("normalizes the replaced id (%s)", (given) => {
+    expect(ConstraintElicitationAgent.parseDecisionDraft(reply({ supersedes: given }), "x", ["0003", "0005"]).supersedes).toBe("0003");
+  });
+
+  it("ignores an id that wasn't offered", () => {
+    expect(ConstraintElicitationAgent.parseDecisionDraft(reply({ supersedes: "0099" }), "x", ["0003"]).supersedes).toBeUndefined();
+  });
+
+  it("flags tentative descriptions but still drafts them", () => {
+    const r = ConstraintElicitationAgent.parseDecisionDraft(reply({ tentative: true }), "maybe Redis someday", []);
+    expect(r.tentative).toBe(true);
+    expect(r.draft.title).toBe("Payments via Stripe or PayPal");
+  });
+
+  it("unparseable output falls back to a draft built from the description", () => {
+    const r = ConstraintElicitationAgent.parseDecisionDraft("sorry, I can't", "Use S3 for all uploaded files", []);
+    expect(r).toEqual({ draft: { title: "Use S3 for all uploaded files", context: "", decision: "Use S3 for all uploaded files", consequences: "" }, tentative: false });
+  });
+
+  it("an empty description never reaches the LLM", async () => {
+    const llm = new FakeLLM([]);
+    await expect(new ConstraintElicitationAgent(llm.asClient()).draftDecision("  ", related)).rejects.toThrow(/Describe the decision/);
+    expect(llm.calls).toHaveLength(0);
+  });
+});
+
 describe("ConstraintElicitationAgent", () => {
   const q = CONSTRAINT_QUESTIONS[0];
 

@@ -6,7 +6,10 @@ export type AdrStatus = "proposed" | "accepted" | "rejected" | "deprecated" | "s
 // What approving an ADR does to ARCH.md, so approval (not proposal) triggers the patch.
 export type ArchEffect =
   | { kind: "add-component"; component: ArchComponent }
-  | { kind: "add-constraint"; constraint: string };
+  | { kind: "add-constraint"; constraint: string }
+  // A changed requirement: swap the superseded ADR's constraint line for the new one
+  // (appended instead if that line is no longer in ARCH.md).
+  | { kind: "replace-constraint"; constraint: string; replaces: string };
 
 export interface ADR {
   id: string;           // e.g. "0001"
@@ -22,6 +25,8 @@ export interface ADR {
   reviewedBy?: string;  // Architect who approved/rejected
   reviewNote?: string;  // Architect's reasoning on rejection (or approval)
   archEffect?: ArchEffect; // applied to ARCH.md when the ADR is approved
+  supersedes?: string;     // id of the ADR this one replaces (marked superseded on approval)
+  supersededBy?: string;   // id of the ADR that replaced this one
 }
 
 export interface ArchComponent {
@@ -81,6 +86,7 @@ export type AuditEventType =
   | "adr_approved"
   | "adr_rejected"
   | "adr_created"
+  | "adr_superseded"
   | "arch_updated"
   | "arch_reverted"
   | "roles_updated";

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
-import { addComponentRow, addConstraint, setLastUpdated } from "../src/storage/archPatch";
+import { addComponentRow, addConstraint, replaceConstraint, setLastUpdated } from "../src/storage/archPatch";
 import { splitSections, recentHighlights, WHOLE_DOCUMENT } from "../src/ui/archView";
 import { FileStore, ArchHistoryEntry } from "../src/storage/FileStore";
 import { renderArchMd } from "../src/prompts/archPrompts";
@@ -53,6 +53,26 @@ describe("archPatch — targeted edits that preserve manual changes (SRS 2.2)", 
     const r = addConstraint(crlf, "X");
     expect(r.markdown).toContain("- X\r\n");
     expect(r.markdown.replace(/\r\n/g, "")).not.toContain("\n");
+  });
+
+  it("replaceConstraint swaps one bullet in place and leaves the rest byte-for-byte", () => {
+    const base = addConstraint(DOC, "Stripe is the only payment provider").markdown;
+    const r = replaceConstraint(base, "stripe is the only payment provider", "Payments go through Stripe or PayPal");
+    expect(r.touched).toEqual(["Constraints"]);
+    expect(r.markdown).toContain("- Payments go through Stripe or PayPal");
+    expect(r.markdown).not.toContain("Stripe is the only payment provider");
+    expect(r.markdown.replace("Payments go through Stripe or PayPal", "Stripe is the only payment provider")).toBe(base);
+  });
+
+  it("replaceConstraint appends when the old line is gone, and drops it when the new one is already listed", () => {
+    const appended = replaceConstraint(DOC, "A line someone deleted by hand", "Use S3 for uploads");
+    expect(appended.markdown).toContain("- Use S3 for uploads");
+    expect(appended.markdown).toContain("- Use PostgreSQL as the primary database");
+
+    const both = addConstraint(addConstraint(DOC, "Old rule").markdown, "New rule").markdown;
+    const r = replaceConstraint(both, "Old rule", "New rule");
+    expect(r.markdown).not.toContain("- Old rule");
+    expect(r.markdown.match(/- New rule/g)).toHaveLength(1);
   });
 
   it("setLastUpdated only rewrites the timestamp line", () => {
@@ -124,6 +144,18 @@ describe("FileStore — patching, history and revert (SRS 2.1 version history)",
     const [h] = await store.getHistory();
     expect(h).toMatchObject({ reason: "ADR-0002: Add Cache", sections: ["Components"] });
     expect(read(".blueprint", "history", `${h.id}.md`)).not.toContain("| Cache |");
+  });
+
+  it("replace-constraint updates ARCH.md and arch.json in place", async () => {
+    await store.applyArchEffect({ kind: "add-constraint", constraint: "Redis for sessions" }, "ADR-0002");
+    const touched = await store.applyArchEffect(
+      { kind: "replace-constraint", constraint: "Use MySQL as the primary database", replaces: "Use PostgreSQL as the primary database" },
+      "ADR-0003: Move to MySQL"
+    );
+    expect(touched).toEqual(["Constraints"]);
+    expect(read("docs", "ARCH.md")).toContain("- Use MySQL as the primary database");
+    expect(read("docs", "ARCH.md")).not.toContain("PostgreSQL as the primary");
+    expect((await store.readArchBlueprint())?.constraints).toEqual(["Use MySQL as the primary database", "Redis for sessions"]);
   });
 
   it("a duplicate effect changes nothing and records no history", async () => {

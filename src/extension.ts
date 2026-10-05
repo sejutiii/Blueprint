@@ -90,6 +90,8 @@ export function activate(context: vscode.ExtensionContext): void {
   register("blueprint.configureRoles", () => handleConfigureRoles());
   register("blueprint.revertArch",     () => handleRevertArch());
   register("blueprint.regenerateArch", () => handleRegenerateArch());
+  register("blueprint.addDecision",    () => handleAddDecision(context));
+  register("blueprint.guidedQuestions", () => handleGuidedQuestions(context));
 
   context.subscriptions.push(
     previewChanged,
@@ -245,6 +247,20 @@ async function handleInit(context: vscode.ExtensionContext): Promise<void> {
     if (choice !== "Re-initialize") { return; }
   }
 
+  await openSetupPanel(context, "setup", roles);
+}
+
+// The wizard's constraint questions on their own, for an initialized project (e.g. the wizard
+// was closed right after ARCH.md was generated). Open to Developers too: their ADRs wait for approval.
+async function handleGuidedQuestions(context: vscode.ExtensionContext): Promise<void> {
+  if (!(await orchestrator.isInitialized())) {
+    vscode.window.showWarningMessage("BluePrint: Initialize the project first.");
+    return;
+  }
+  await openSetupPanel(context, "constraints", await orchestrator.roles());
+}
+
+async function openSetupPanel(context: vscode.ExtensionContext, mode: "setup" | "constraints", roles: RolesView): Promise<void> {
   const panel = BlueprintPanel.show("setup", context.extensionUri);
   await panel.loadMedia("setupWizard.html", { nonce: panel.nonce });
 
@@ -253,6 +269,7 @@ async function handleInit(context: vscode.ExtensionContext): Promise<void> {
   const defaultConfig    = LLMClient.getDefault();
   panel.postMessage({
     command: "init",
+    mode,
     keyPages: PROVIDER_KEY_PAGES,
     hasProvider: !!existingClient,
     provider: existingProvider ?? null,
@@ -398,6 +415,64 @@ async function handleInit(context: vscode.ExtensionContext): Promise<void> {
   });
 }
 
+// ── Add Decision ────────────────────────────────────────────────────────────
+
+// A decision or changed requirement in the developer's words → an editable ADR draft, which may
+// replace an existing decision. Roles apply as everywhere: a Developer's ADR waits for approval.
+async function handleAddDecision(context: vscode.ExtensionContext): Promise<void> {
+  if (!(await orchestrator.isInitialized())) {
+    vscode.window.showWarningMessage("BluePrint: Initialize the project first.");
+    return;
+  }
+  const existing = BlueprintPanel.get("decision");
+  const panel = BlueprintPanel.show("decision", context.extensionUri);
+  if (existing) { return; } // keep whatever is in progress there
+
+  panel.setMessageHandler(async (msg) => {
+    switch (msg.command) {
+      case "ready":
+        panel.postMessage({ command: "init", roles: await orchestrator.roles() });
+        break;
+
+      case "draft":
+        try {
+          const { result, candidates } = await orchestrator.draftDecision(String(msg.description ?? ""));
+          panel.postMessage({ command: "draft", result, candidates });
+        } catch (err) {
+          panel.postMessage({ command: "error", stage: "draft", message: err instanceof Error ? err.message : String(err) });
+        }
+        break;
+
+      case "save":
+        try {
+          const supersedes = typeof msg.supersedes === "string" && msg.supersedes ? msg.supersedes : undefined;
+          const { adr, autoApproved } = await orchestrator.saveDecision(msg.draft as ConstraintDraft, supersedes);
+          const replaced = supersedes ? ` ADR-${supersedes} is now superseded and its constraint in ARCH.md was replaced.` : " ARCH.md lists it under Constraints.";
+          panel.postMessage({
+            command: "saved", adrId: adr.id, pending: !autoApproved,
+            message: autoApproved
+              ? `"${adr.title}" is accepted.${replaced}`
+              : `"${adr.title}" is waiting for an Architect's approval. ARCH.md${supersedes ? ` and ADR-${supersedes}` : ""} will change once it is approved.`,
+          });
+        } catch (err) {
+          panel.postMessage({ command: "error", stage: "save", message: err instanceof Error ? err.message : String(err) });
+        }
+        break;
+
+      case "guided":
+        await handleGuidedQuestions(context);
+        break;
+
+      case "openAdr": {
+        const adr = await AdrStore.fromWorkspace()?.getById(String(msg.id));
+        if (adr) { await openAdrFile(adr); }
+        break;
+      }
+    }
+  });
+  await panel.loadMedia("decisionPanel.html", { nonce: panel.nonce });
+}
+
 // ── Compliance review ───────────────────────────────────────────────────────
 
 function savedMessage(adrId: string, autoApproved: boolean, archNote: string): string {
@@ -493,6 +568,7 @@ async function handleHub(context: vscode.ExtensionContext): Promise<void> {
       case "openViolations": await handleReview(context, "violations").catch(reportError); break;
       case "openExtensions": await handleReview(context, "extensions").catch(reportError); break;
       case "openPreCheck":   await handlePreCheck(context).catch(reportError);              break;
+      case "openAddDecision": await handleAddDecision(context).catch(reportError);        break;
     }
   });
   await panel.loadMedia("blueprintHub.html", { nonce: panel.nonce });

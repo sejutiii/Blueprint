@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { ArchBlueprint, ArchEffect } from "../types";
 import { renderArchMd } from "../prompts/archPrompts";
-import { addComponentRow, addConstraint, setLastUpdated } from "./archPatch";
+import { addComponentRow, addConstraint, replaceConstraint, setLastUpdated } from "./archPatch";
 
 export interface ArchHistoryEntry {
   id: string;           // also the snapshot file stem
@@ -99,10 +99,18 @@ export class FileStore {
       patched = addComponentRow(currentMd, effect.component);
       const exists = blueprint.components.some((c) => c.name.toLowerCase() === effect.component.name.toLowerCase());
       if (!exists) { blueprint.components.push(effect.component); }
-    } else {
+    } else if (effect.kind === "add-constraint") {
       patched = addConstraint(currentMd, effect.constraint);
       if (!blueprint.constraints.some((c) => c.toLowerCase() === effect.constraint.trim().toLowerCase())) {
         blueprint.constraints.push(effect.constraint.trim());
+      }
+    } else {
+      patched = replaceConstraint(currentMd, effect.replaces, effect.constraint);
+      const next = effect.constraint.trim();
+      const old  = blueprint.constraints.findIndex((c) => c.toLowerCase() === effect.replaces.trim().toLowerCase());
+      if (old !== -1) { blueprint.constraints.splice(old, 1); }
+      if (!blueprint.constraints.some((c) => c.toLowerCase() === next.toLowerCase())) {
+        blueprint.constraints.splice(old !== -1 ? old : blueprint.constraints.length, 0, next);
       }
     }
 
