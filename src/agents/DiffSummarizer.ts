@@ -3,7 +3,7 @@ import { promisify } from "util";
 import * as fs from "fs/promises";
 import * as path from "path";
 import { DiffSummary } from "../types";
-import { FileDiff, filterDiffBlocks, parseUnifiedDiff } from "../parsing/unifiedDiff";
+import { FileDiff, excerptDiff, filterDiffBlocks, parseUnifiedDiff } from "../parsing/unifiedDiff";
 import { extractSignals } from "../parsing/TreeSitterExtractor";
 
 const execAsync = promisify(exec);
@@ -15,7 +15,8 @@ const MAX_UNTRACKED_FILES    = 30;
 const MAX_UNTRACKED_FILE_LEN = 20_000;
 const MAX_PARSED_FILE_LEN    = 400_000;
 
-export const LIMITS = { imports: 25, signatures: 25, dependencies: 15, rawDiff: 8000 } as const;
+// rawDiff is the excerpt both compliance passes see; every changed file stays named in it.
+export const LIMITS = { imports: 25, signatures: 25, dependencies: 15, rawDiff: 6000 } as const;
 
 const LOCKFILES = /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|poetry\.lock|Cargo\.lock|go\.sum)$/;
 // BluePrint's own artifacts are not code under review.
@@ -88,12 +89,16 @@ export class DiffSummarizer {
     rawDiff     = filterDiffBlocks(rawDiff, isReviewable);
     const files = parseUnifiedDiff(rawDiff);
 
-    const newImports: string[]      = [];
-    const newSignatures: string[]   = [];
-    const newDependencies: string[] = [];
+    const newImports: string[]          = [];
+    const newSignatures: string[]       = [];
+    const newDependencies: string[]     = [];
+    const removedDependencies: string[] = [];
 
     for (const file of files) {
-      newDependencies.push(...DiffSummarizer.dependencyLines(file));
+      const deps = DiffSummarizer.dependencyChanges(file);
+      newDependencies.push(...deps.added);
+      removedDependencies.push(...deps.removed);
+      if (file.isDeleted) { continue; } // nothing added; the file itself is listed as deleted
 
       const signals = workspaceRoot ? await this.parseFile(workspaceRoot, file) : null;
       const { imports, signatures } = signals ?? DiffSummarizer.regexSignals(file.addedText);
@@ -101,12 +106,18 @@ export class DiffSummarizer {
       newSignatures.push(...signatures);
     }
 
+    const paths = (keep: (f: FileDiff) => boolean) => [...new Set(files.filter(keep).map((f) => f.path))];
     return {
-      newFiles:        [...new Set(files.map((f) => f.path))],
-      newImports:      [...new Set(newImports)].slice(0, LIMITS.imports),
-      newSignatures:   [...new Set(newSignatures)].slice(0, LIMITS.signatures),
-      newDependencies: [...new Set(newDependencies)].slice(0, LIMITS.dependencies),
-      rawDiff:         rawDiff.slice(0, LIMITS.rawDiff),
+      changedFiles:        paths(() => true),
+      addedFiles:          paths((f) => f.isNew && !f.isDeleted),
+      modifiedFiles:       paths((f) => !f.isNew && !f.isDeleted),
+      deletedFiles:        paths((f) => f.isDeleted),
+      renamedFiles:        files.filter((f) => f.renamedFrom).map((f) => `${f.renamedFrom} → ${f.path}`),
+      newImports:          [...new Set(newImports)].slice(0, LIMITS.imports),
+      newSignatures:       [...new Set(newSignatures)].slice(0, LIMITS.signatures),
+      newDependencies:     [...new Set(newDependencies)].slice(0, LIMITS.dependencies),
+      removedDependencies: [...new Set(removedDependencies)].slice(0, LIMITS.dependencies),
+      rawDiff:             excerptDiff(rawDiff, LIMITS.rawDiff),
     };
   }
 
@@ -151,29 +162,49 @@ export class DiffSummarizer {
     return { imports, signatures };
   }
 
-  /** Added dependency declarations in the common manifest formats. */
-  static dependencyLines(file: FileDiff): string[] {
-    const name = path.posix.basename(file.path);
-    // A line that only gained/lost a trailing comma (because a neighbour was added) isn't new.
-    const norm    = (l: string) => l.trim().replace(/,$/, "");
-    const removed = new Set(file.removedText.map(norm));
-    const added   = file.addedText.map((l) => l.trim()).filter((l) => l && !removed.has(norm(l)));
+  /** Added and removed dependency declarations in the common manifest formats. */
+  static dependencyChanges(file: FileDiff): { added: string[]; removed: string[] } {
+    // A line that only gained/lost a trailing comma (because a neighbour changed) is neither.
+    const norm     = (l: string) => l.trim().replace(/,$/, "");
+    const before   = new Set(file.removedText.map(norm));
+    const after    = new Set(file.addedText.map(norm));
+    const onlyIn   = (lines: string[], other: Set<string>) =>
+      lines.map((l) => l.trim()).filter((l) => l && !other.has(norm(l)));
+    const isDep    = DiffSummarizer.dependencyMatcher(path.posix.basename(file.path));
+    // A version bump shows up as one removed and one added line for the same package; it is
+    // reported as added (the new version) only, not as a removal.
+    const added    = onlyIn(file.addedText, before).filter(isDep);
+    const bumped   = new Set(added.map(DiffSummarizer.packageName));
+    const removed  = onlyIn(file.removedText, after).filter(isDep).filter((l) => !bumped.has(DiffSummarizer.packageName(l)));
+    return { added, removed };
+  }
 
+  /** Added dependency declarations only (kept for callers that don't need removals). */
+  static dependencyLines(file: FileDiff): string[] {
+    return DiffSummarizer.dependencyChanges(file).added;
+  }
+
+  private static dependencyMatcher(name: string): (line: string) => boolean {
     if (name === "package.json") {
       // Version-shaped values only, so "scripts" entries and metadata fields aren't mistaken for deps.
-      return added.filter((l) =>
+      return (l) =>
         /^"[^"]+"\s*:\s*"(\^|~|>=?|<=?|=)?\s*(\d|\*|latest|next|workspace:|file:|link:|npm:|git|github:|https?:)/.test(l) &&
-        !/^"(version|engines|node|vscode)"/.test(l));
+        !/^"(version|engines|node|vscode)"/.test(l);
     }
     if (/^requirements.*\.txt$/.test(name)) {
-      return added.filter((l) => !l.startsWith("#") && !l.startsWith("-"));
+      return (l) => !l.startsWith("#") && !l.startsWith("-");
     }
     if (name === "go.mod") {
-      return added.filter((l) => /^(require\s+)?[\w.-]+\.[\w./-]+\s+v\d/.test(l));
+      return (l) => /^(require\s+)?[\w.-]+\.[\w./-]+\s+v\d/.test(l);
     }
     if (name === "pyproject.toml" || name === "Cargo.toml") {
-      return added.filter((l) => /^[\w.-]+\s*=\s*("|\{)/.test(l) || /^"[\w.-]+[<>=~!]/.test(l));
+      return (l) => /^[\w.-]+\s*=\s*("|\{)/.test(l) || /^"[\w.-]+[<>=~!]/.test(l);
     }
-    return [];
+    return () => false;
+  }
+
+  // `"express": "^4"` → express; `flask==3.0` → flask; `require github.com/x/y v1` → github.com/x/y.
+  private static packageName(line: string): string {
+    return line.trim().replace(/^require\s+/, "").replace(/^"/, "").split(/["\s=<>~!:]/)[0].toLowerCase();
   }
 }

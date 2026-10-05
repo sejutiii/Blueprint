@@ -140,10 +140,11 @@ export class RetrievalAgent {
   /** Build a plain-text query string from a DiffSummary. */
   static queryFromDiff(diff: DiffSummary): string {
     return [
-      ...diff.newFiles,
+      ...diff.changedFiles,
       ...diff.newSignatures,
       ...diff.newImports,
       ...diff.newDependencies,
+      ...diff.removedDependencies,
     ].join(" ");
   }
 

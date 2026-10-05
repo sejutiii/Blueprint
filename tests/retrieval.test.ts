@@ -4,7 +4,7 @@ import { EmbeddingService } from "../src/embeddings/EmbeddingService";
 import { AdrStore } from "../src/storage/AdrStore";
 import { buildPromptWithContext } from "../src/prompts/preCheckPrompts";
 import { ADR } from "../src/types";
-import { adr, blueprint } from "./helpers";
+import { adr, blueprint, diffSummary } from "./helpers";
 
 /** Deterministic embeddings: a one-hot vector per "topic" keyword, so cosine = shared topic. */
 class FakeEmbeddings {
@@ -89,9 +89,10 @@ describe("RetrievalAgent", () => {
   });
 
   it("T31: query built from the diff summary", () => {
-    expect(RetrievalAgent.queryFromDiff({
-      newFiles: ["a.ts"], newSignatures: ["class A"], newImports: ["import x"], newDependencies: ['"pg": "^8"'], rawDiff: "ignored",
-    })).toBe('a.ts class A import x "pg": "^8"');
+    expect(RetrievalAgent.queryFromDiff(diffSummary({
+      changedFiles: ["a.ts"], newSignatures: ["class A"], newImports: ["import x"],
+      newDependencies: ['"pg": "^8"'], removedDependencies: ['"mysql": "^2"'], rawDiff: "ignored",
+    }))).toBe('a.ts class A import x "pg": "^8" "mysql": "^2"');
   });
 
   it("only accepted ADRs are used as context", async () => {

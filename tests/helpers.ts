@@ -1,8 +1,17 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { ADR, ArchBlueprint } from "../src/types";
+import { ADR, ArchBlueprint, DiffSummary } from "../src/types";
 import { LLMClient } from "../src/llm/LLMClient";
+
+/** A DiffSummary with every field present; override what the test cares about. */
+export function diffSummary(overrides: Partial<DiffSummary> = {}): DiffSummary {
+  return {
+    changedFiles: [], addedFiles: [], modifiedFiles: [], deletedFiles: [], renamedFiles: [],
+    newImports: [], newSignatures: [], newDependencies: [], removedDependencies: [], rawDiff: "",
+    ...overrides,
+  };
+}
 
 export function tempDir(prefix = "blueprint-test-"): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));

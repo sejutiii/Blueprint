@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { execSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
-import { parseUnifiedDiff, filterDiffBlocks } from "../src/parsing/unifiedDiff";
+import { parseUnifiedDiff, filterDiffBlocks, excerptDiff } from "../src/parsing/unifiedDiff";
 import { DiffSummarizer, LIMITS, isReviewable } from "../src/agents/DiffSummarizer";
 import { extractSignals, languageForFile } from "../src/parsing/TreeSitterExtractor";
 import { tempDir, removeDir } from "./helpers";
@@ -35,12 +35,26 @@ new file mode 100644
 `;
 
 describe("parseUnifiedDiff", () => {
-  it("maps added lines to post-change line numbers and skips deleted files", () => {
+  it("maps added lines to post-change line numbers", () => {
     const files = parseUnifiedDiff(DIFF);
-    expect(files.map((f) => f.path)).toEqual(["src/store.py", ".blueprint/arch.json"]);
+    expect(files.map((f) => f.path)).toEqual(["src/store.py", "old.txt", ".blueprint/arch.json"]);
     expect([...files[0].addedLines]).toEqual([2, 14, 15]);
     expect(files[0].addedText).toEqual(["import redis", "    def cache(self):", "        return 1"]);
-    expect(files[1].isNew).toBe(true);
+    expect(files[2].isNew).toBe(true);
+  });
+
+  it("keeps deleted files (old path, removed lines) so removals can be reported", () => {
+    const deleted = parseUnifiedDiff(DIFF)[1];
+    expect(deleted).toMatchObject({ path: "old.txt", isDeleted: true, isNew: false, removedText: ["bye"], addedText: [] });
+  });
+
+  it("records renames, with and without content changes", () => {
+    const pure = "diff --git a/a.ts b/b.ts\nsimilarity index 100%\nrename from a.ts\nrename to b.ts\n";
+    const edited = "diff --git a/c.ts b/d.ts\nsimilarity index 90%\nrename from c.ts\nrename to d.ts\n" +
+      "--- a/c.ts\n+++ b/d.ts\n@@ -1 +1,2 @@\n x\n+y\n";
+    const files = parseUnifiedDiff(pure + edited);
+    expect(files.map((f) => [f.path, f.renamedFrom, f.isNew])).toEqual([["b.ts", "a.ts", false], ["d.ts", "c.ts", false]]);
+    expect(files[1].addedText).toEqual(["y"]);
   });
 
   it("merges a file that appears in both staged and unstaged diffs", () => {
@@ -55,6 +69,36 @@ describe("parseUnifiedDiff", () => {
     const kept = filterDiffBlocks(DIFF, isReviewable);
     expect(kept).toContain("src/store.py");
     expect(kept).not.toContain(".blueprint/arch.json");
+  });
+});
+
+describe("excerptDiff — every changed file stays visible", () => {
+  const block = (name: string, lines: number) =>
+    `diff --git a/${name} b/${name}\n--- a/${name}\n+++ b/${name}\n@@ -1 +1,${lines} @@\n` + "+some added code line here\n".repeat(lines);
+
+  it("returns a diff that fits unchanged", () => {
+    const raw = block("a.ts", 3);
+    expect(excerptDiff(raw, 10_000)).toBe(raw);
+  });
+
+  it("a huge first file can't crowd out the others; small files are kept whole", () => {
+    const raw = block("huge.ts", 2000) + block("small.ts", 2) + block("medium.ts", 300);
+    const out = excerptDiff(raw, 6000);
+    expect(out.length).toBeLessThanOrEqual(6000 + 120);
+    expect(out).toContain(block("small.ts", 2));
+    for (const name of ["huge.ts", "medium.ts"]) {
+      expect(out).toContain(`diff --git a/${name}`);
+    }
+    expect(out.match(/more lines in this file/g)).toHaveLength(2);
+    // The unused share of the small file goes to the two big ones, roughly evenly.
+    const sizeOf = (name: string) => out.split(/(?=^diff --git )/m).find((b) => b.includes(`a/${name}`))!.length;
+    expect(Math.abs(sizeOf("huge.ts") - sizeOf("medium.ts"))).toBeLessThan(100);
+  });
+
+  it("with very many files, each is still named", () => {
+    const raw = Array.from({ length: 80 }, (_, i) => block(`f${i}.ts`, 50)).join("");
+    const out = excerptDiff(raw, 6000);
+    expect(out.match(/^diff --git /gm)).toHaveLength(80);
   });
 });
 
@@ -75,7 +119,8 @@ describe("DiffSummarizer.summarize", () => {
     const raw = "diff --git a/a.ts b/a.ts\nnew file mode 100644\n--- /dev/null\n+++ b/a.ts\n@@ -0,0 +1,4 @@\n" +
       "+import { x } from \"y\";\n+import { x } from \"y\";\n+export class Foo {}\n+export async function go() {}\n";
     const sum = await s.summarize(raw);
-    expect(sum.newFiles).toEqual(["a.ts"]);
+    expect(sum.changedFiles).toEqual(["a.ts"]);
+    expect(sum.addedFiles).toEqual(["a.ts"]);
     expect(sum.newImports).toEqual(['import { x } from "y";']);
     expect(sum.newSignatures).toEqual(["export class Foo {}", "export async function go() {}"]);
   });
@@ -85,6 +130,35 @@ describe("DiffSummarizer.summarize", () => {
       "-    \"express\": \"^4.0.0\"\n+    \"express\": \"^4.0.0\",\n+    \"mongoose\": \"^8.1.0\"\n+    \"build\": \"tsc\",\n+  \"version\": \"1.2.3\",\n";
     const sum = await s.summarize(raw);
     expect(sum.newDependencies).toEqual(['"mongoose": "^8.1.0"']);
+  });
+
+  it("removed dependencies are reported; a version bump is not a removal", async () => {
+    const raw = "diff --git a/package.json b/package.json\n--- a/package.json\n+++ b/package.json\n@@ -1,4 +1,3 @@\n" +
+      "-    \"stripe\": \"^14.0.0\",\n-    \"pg\": \"^8.0.0\"\n+    \"pg\": \"^8.11.0\"\n";
+    const sum = await s.summarize(raw);
+    expect(sum.removedDependencies).toEqual(['"stripe": "^14.0.0",']);
+    expect(sum.newDependencies).toEqual(['"pg": "^8.11.0"']);
+  });
+
+  it("files are split into added, modified, renamed and deleted", async () => {
+    const raw = DIFF.replace(/diff --git a\/\.blueprint[\s\S]*$/, "") +
+      "diff --git a/new.ts b/new.ts\nnew file mode 100644\n--- /dev/null\n+++ b/new.ts\n@@ -0,0 +1 @@\n+export class N {}\n" +
+      "diff --git a/a.ts b/b.ts\nrename from a.ts\nrename to b.ts\n";
+    const sum = await s.summarize(raw);
+    expect(sum.addedFiles).toEqual(["new.ts"]);
+    expect(sum.modifiedFiles).toEqual(["src/store.py", "b.ts"]);
+    expect(sum.deletedFiles).toEqual(["old.txt"]);
+    expect(sum.renamedFiles).toEqual(["a.ts → b.ts"]);
+    expect(sum.changedFiles).toHaveLength(4);
+    expect(sum.newSignatures).toEqual(["def cache(self):", "export class N {}"]); // nothing from the deleted file
+  });
+
+  it("a deleted manifest reports its dependencies as removed", async () => {
+    const raw = "diff --git a/requirements.txt b/requirements.txt\ndeleted file mode 100644\n--- a/requirements.txt\n+++ /dev/null\n" +
+      "@@ -1,2 +0,0 @@\n-flask==3.0\n-redis==5.0\n";
+    const sum = await s.summarize(raw);
+    expect(sum.deletedFiles).toEqual(["requirements.txt"]);
+    expect(sum.removedDependencies).toEqual(["flask==3.0", "redis==5.0"]);
   });
 
   it("T22: requirements.txt and go.mod", () => {
@@ -105,14 +179,16 @@ describe("DiffSummarizer.summarize", () => {
     expect(sum.newDependencies).toHaveLength(LIMITS.dependencies);
   });
 
-  it("T24: raw diff truncated to 8000 characters", async () => {
+  it("T24: large diffs are cut to the excerpt budget on line boundaries, with a note", async () => {
     const raw = "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1,500 @@\n" + "+lorem ipsum dolor sit amet\n".repeat(500);
-    expect((await s.summarize(raw)).rawDiff).toHaveLength(LIMITS.rawDiff);
+    const excerpt = (await s.summarize(raw)).rawDiff;
+    expect(excerpt.length).toBeLessThanOrEqual(LIMITS.rawDiff + 60);
+    expect(excerpt).toMatch(/\n\+lorem ipsum dolor sit amet\n… \(\d+ more lines in this file\)\n$/);
   });
 
   it("BluePrint artifacts are excluded from files and raw diff", async () => {
     const sum = await s.summarize(DIFF);
-    expect(sum.newFiles).toEqual(["src/store.py"]);
+    expect(sum.changedFiles).toEqual(["src/store.py", "old.txt"]);
     expect(sum.rawDiff).not.toContain(".blueprint");
   });
 });
@@ -129,11 +205,15 @@ describe("DiffSummarizer.getDiff + Tree-sitter, against real git repos", () => {
     git("config user.email t@t.io");
     git("config user.name t");
     fs.writeFileSync(path.join(repo, "store.py"), "import os\n\nclass Store:\n    def get(self, k):\n        return k\n");
+    fs.writeFileSync(path.join(repo, "legacy.ts"), "export const old = 1;\n");
+    fs.writeFileSync(path.join(repo, "util.ts"), "export function helper() { return 42; }\n");
     git("add -A");
     git("commit -qm init");
     // Modify a tracked file (new method in existing class), add an untracked file, and a BluePrint artifact.
     fs.writeFileSync(path.join(repo, "store.py"), "import os\nimport redis\n\nclass Store:\n    def get(self, k):\n        return k\n\n    def cache(self, k):\n        return redis.get(k)\n");
     fs.writeFileSync(path.join(repo, "bus.ts"), "import { Kafka } from \"kafkajs\";\nexport class EventBus {\n  publish(e: string) {}\n}\n");
+    fs.rmSync(path.join(repo, "legacy.ts"));
+    git("mv util.ts helpers.ts");
     fs.mkdirSync(path.join(repo, ".blueprint"));
     fs.writeFileSync(path.join(repo, ".blueprint", "arch.json"), "{}");
   });
@@ -146,7 +226,10 @@ describe("DiffSummarizer.getDiff + Tree-sitter, against real git repos", () => {
   it("T21: includes untracked files, reports only declarations whose header was added", async () => {
     const s = new DiffSummarizer();
     const sum = await s.summarize(await s.getDiff(repo), repo);
-    expect(sum.newFiles.sort()).toEqual(["bus.ts", "store.py"]);
+    expect(sum.addedFiles).toEqual(["bus.ts"]);
+    expect(sum.modifiedFiles.sort()).toEqual(["helpers.ts", "store.py"]);
+    expect(sum.deletedFiles).toEqual(["legacy.ts"]);
+    expect(sum.renamedFiles).toEqual(["util.ts → helpers.ts"]);
     expect(sum.newImports).toEqual(expect.arrayContaining(["import redis", 'import { Kafka } from "kafkajs";']));
     expect(sum.newImports).not.toContain("import os");
     expect(sum.newSignatures).toEqual(expect.arrayContaining(["def cache(self, k)", "export class EventBus", "publish(e: string)"]));

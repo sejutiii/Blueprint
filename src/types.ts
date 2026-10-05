@@ -40,11 +40,16 @@ export interface ArchBlueprint {
 }
 
 export interface DiffSummary {
+  changedFiles: string[];    // every path in the diff (deleted files under their old path)
+  addedFiles: string[];
+  modifiedFiles: string[];   // includes renamed files, under their new path
+  deletedFiles: string[];
+  renamedFiles: string[];    // "old → new", for display
   newImports: string[];
   newSignatures: string[];
-  newFiles: string[];
   newDependencies: string[];
-  rawDiff: string;
+  removedDependencies: string[];
+  rawDiff: string;           // excerpt: every file named, long files cut (see excerptDiff)
 }
 
 export interface ViolationDetail {

@@ -34,7 +34,7 @@ npm run typecheck   # extension + test sources
 | T21 | Structural signals from a diff | Auto | `diff.test.ts` — Tree-sitter against a real git repo, and regex fallback |
 | T22 | package.json dependencies | Auto | `diff.test.ts` — also requirements.txt, go.mod; scripts/comma-only changes ignored |
 | T23 | Signal list truncation | Auto | `diff.test.ts` |
-| T24 | Large diff truncation | Auto | `diff.test.ts` |
+| T24 | Large diff truncation | Auto | `diff.test.ts` — now a 6,000-char excerpt shared by both passes; every file stays named, long files are cut with a note |
 | T25 | No git repo / no diff | Auto + Manual | `diff.test.ts`; "No uncommitted changes" screen is manual |
 | T26 | Short-circuit when ADRs ≤ top-K | Auto | `retrieval.test.ts` |
 | T27 | Top-K ranking | Auto | `retrieval.test.ts` |
@@ -77,6 +77,7 @@ npm run typecheck   # extension + test sources
 | Pre-check context block (SRS 3.3.1 step 5) | `retrieval.test.ts` |
 | Regenerate from codebase (R4) | `snapshot.test.ts`, `agents.test.ts` (constraints never dropped) |
 | Reviewable files | `diff.test.ts`: `.blueprint/`, `docs/adr/`, `docs/ARCH.md`, lockfiles excluded |
+| Diff summary by file kind | `diff.test.ts`: added / modified / renamed / deleted files (incl. a real `git mv` and deletion), removed dependencies (a version bump is not a removal), deleted manifests; `agents.test.ts`: both passes get the same change description and excerpt |
 
 ## Manual checklist (Extension Development Host)
 

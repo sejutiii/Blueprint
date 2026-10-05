@@ -229,14 +229,14 @@ export class Orchestrator {
         await ws.audit?.append({
           eventType: "compliance_check",
           summary:   pass1.violation ? `${pass1.violations.length} violation(s) detected` : "No violations detected",
-          actor, changedFiles: diffSummary.newFiles, complianceResult: result,
+          actor, changedFiles: diffSummary.changedFiles, complianceResult: result,
         });
       }
       if (extensions.length) {
         await ws.audit?.append({
           eventType: "extension_detected",
           summary:   `New component(s) detected: ${extensions.map((e) => e.name).join(", ")}`,
-          actor, changedFiles: diffSummary.newFiles,
+          actor, changedFiles: diffSummary.changedFiles,
         });
       }
 

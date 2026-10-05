@@ -470,7 +470,9 @@ async function runReview(panel: BlueprintPanel, mode: ReviewMode): Promise<void>
       panel.postMessage({ command: "noDiff" });
       return;
     }
-    lastReviewedFiles = (outcome.diffSummary as DiffSummary).newFiles;
+    // Files an ADR links back to; deleted ones can't be opened, so they're left out.
+    const summary = outcome.diffSummary as DiffSummary;
+    lastReviewedFiles = summary.changedFiles.filter((f) => !summary.deletedFiles.includes(f));
     panel.postMessage({ command: "result", result: outcome.result, diffSummary: outcome.diffSummary });
   } catch (err) {
     panel.postMessage({ command: "error", message: err instanceof Error ? err.message : String(err) });

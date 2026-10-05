@@ -5,7 +5,7 @@ import { ConstraintElicitationAgent } from "../src/agents/ConstraintElicitationA
 import { PreCheckAgent } from "../src/agents/PreCheckAgent";
 import { CONSTRAINT_QUESTIONS } from "../src/prompts/constraintPrompts";
 import { parseJsonObject } from "../src/util/llmJson";
-import { FakeLLM, blueprint, adr } from "./helpers";
+import { FakeLLM, blueprint, adr, diffSummary } from "./helpers";
 
 describe("parseJsonObject (defensive parsing, SRS 4.3)", () => {
   it("strips markdown fences", () => {
@@ -97,10 +97,32 @@ describe("ComplianceAgent", () => {
 
   it("check() reports which ADRs were used as context", async () => {
     const llm = new FakeLLM([JSON.stringify({ violation: false, violations: [] })]);
-    const diff = { newFiles: ["a.ts"], newImports: [], newSignatures: [], newDependencies: [], rawDiff: "" };
+    const diff = diffSummary({ changedFiles: ["a.ts"], modifiedFiles: ["a.ts"] });
     const result = await new ComplianceAgent(llm.asClient()).check(diff, blueprint(), [adr("0001", "PG"), adr("0002", "React")]);
     expect(result.adrsUsed).toEqual(["0001", "0002"]);
     expect(llm.calls[0].user).toContain("[ADR-0001] PG");
+  });
+
+  it("both passes see files by kind, removals, and the diff excerpt", async () => {
+    const diff = diffSummary({
+      changedFiles: ["src/reviews.ts", "src/orders.ts", "src/payments.ts"],
+      addedFiles: ["src/reviews.ts"], modifiedFiles: ["src/orders.ts"], deletedFiles: ["src/payments.ts"],
+      removedDependencies: ['"stripe": "^14.0.0"'],
+      rawDiff: "diff --git a/src/orders.ts b/src/orders.ts\n+const db = mongo.connect(url);\n",
+    });
+    const llm = new FakeLLM([JSON.stringify({ violation: false, violations: [] }), JSON.stringify({ extensions: [] })]);
+    const agent = new ComplianceAgent(llm.asClient());
+    await agent.check(diff, blueprint(), []);
+    await agent.detectExtensions(diff, blueprint());
+    for (const call of llm.calls) {
+      expect(call.user).toContain("Added files: src/reviews.ts");
+      expect(call.user).toContain("Modified files: src/orders.ts");
+      expect(call.user).toContain("Deleted files: src/payments.ts");
+      expect(call.user).toContain('Removed dependencies: "stripe": "^14.0.0"');
+      expect(call.user).toContain("DIFF EXCERPT");
+      expect(call.user).toContain("mongo.connect(url)");
+      expect(call.user).not.toContain("New files");
+    }
   });
 });
 
