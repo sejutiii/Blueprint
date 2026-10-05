@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import type { RolesView } from "../orchestrator/Orchestrator";
 
 /**
  * Manages the BluePrint status bar item shown at the bottom of the editor.
@@ -9,6 +10,8 @@ export class StatusBarManager {
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private pending = 0;
   private idle = false;
+  private uninitialized = false;
+  private who = "";
 
   constructor() {
     this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 0);
@@ -20,8 +23,9 @@ export class StatusBarManager {
   private apply(text: string, tooltip: string, command: string, warning = false, idle = false): void {
     if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = undefined; }
     this.idle = idle;
+    this.uninitialized = false;
     this.item.text = text;
-    this.item.tooltip = tooltip;
+    this.item.tooltip = this.who ? `${tooltip}\n\n${this.who}` : tooltip;
     this.item.command = command;
     this.item.backgroundColor = warning ? new vscode.ThemeColor("statusBarItem.warningBackground") : undefined;
   }
@@ -49,6 +53,22 @@ export class StatusBarManager {
     if (this.idle) { this.setIdle(); }
   }
 
+  /** Leave "Not initialized" once the project is set up; any other state is left alone. */
+  markInitialized(): void {
+    if (this.uninitialized) { this.setIdle(); }
+  }
+
+  /** Who you are and your role, appended to every tooltip. Takes effect on the next redraw. */
+  setIdentity(roles: RolesView | null): void {
+    if (!roles) { this.who = ""; return; }
+    const role = roles.role === "architect" ? "Architect" : "Developer";
+    this.who = !roles.identity
+      ? `You: unknown (git user.email is unset) · ${role}`
+      : roles.configured
+        ? `You: ${roles.identity} · ${role}`
+        : `You: ${roles.identity} · ${role} (no roles configured, so everyone is an Architect)`;
+  }
+
   setChecking(): void {
     this.apply("$(sync~spin) BluePrint: Checking…", "Running compliance check", "blueprint.openHub");
   }
@@ -73,6 +93,7 @@ export class StatusBarManager {
       "Click to initialize BluePrint for this project",
       "blueprint.init"
     );
+    this.uninitialized = true;
   }
 
   dispose(): void {

@@ -243,6 +243,43 @@
       word-break: break-word;
     }
 
+    /* Team & roles */
+    .identity {
+      font-size: 12px;
+      padding: 8px 12px;
+      border-radius: 4px;
+      background: var(--vscode-textBlockQuote-background);
+      margin-bottom: 16px;
+    }
+    .identity code, .roles-note code, .hint code {
+      font-family: var(--vscode-editor-font-family);
+      font-size: 11px;
+    }
+    .choices { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+    .choice {
+      display: flex; gap: 10px; align-items: flex-start;
+      padding: 10px 12px;
+      border: 1px solid var(--vscode-input-border);
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: normal;
+      margin: 0;
+    }
+    .choice:hover { border-color: var(--vscode-focusBorder); }
+    .choice.disabled { opacity: 0.5; cursor: not-allowed; }
+    .choice input { margin-top: 2px; }
+    .choice-title { font-size: 13px; font-weight: 500; display: block; }
+    .choice-desc { font-size: 11px; color: var(--vscode-descriptionForeground); display: block; margin-top: 2px; line-height: 1.5; }
+    .hint { font-size: 11px; color: var(--vscode-descriptionForeground); margin-top: 5px; line-height: 1.5; }
+    .roles-note {
+      font-size: 11px;
+      color: var(--vscode-descriptionForeground);
+      border-left: 2px solid var(--vscode-input-border);
+      padding: 2px 0 2px 10px;
+      margin: -8px 0 20px;
+      line-height: 1.5;
+    }
+
     .hidden { display: none !important; }
   </style>
 </head>
@@ -255,6 +292,7 @@
     <div class="step-dot" id="dot-1"></div>
     <div class="step-dot" id="dot-2"></div>
     <div class="step-dot" id="dot-3"></div>
+    <div class="step-dot" id="dot-4"></div>
     <span id="step-label"></span>
   </div>
 
@@ -310,11 +348,67 @@
     </div>
 
     <!-- ════════════════════════════════════
+         SCREEN — Team & roles (only when there is no roles.json)
+    ════════════════════════════════════ -->
+    <div id="screen-roles" class="hidden">
+      <h2>Team &amp; Roles</h2>
+      <p class="subtitle">
+        <strong>Architects</strong> approve decisions, and their own decisions update <code>ARCH.md</code> straight away.
+        Everyone else is a <strong>Developer</strong>: their decisions wait for an Architect's approval.
+      </p>
+
+      <div class="identity" id="roles-identity"></div>
+
+      <div class="choices">
+        <label class="choice" id="choice-solo">
+          <input type="radio" name="roles-mode" value="solo" />
+          <span><span class="choice-title">Just me</span>
+            <span class="choice-desc">You become the only Architect. Anyone who joins later is a Developer until you add them.</span></span>
+        </label>
+        <label class="choice" id="choice-team">
+          <input type="radio" name="roles-mode" value="team" />
+          <span><span class="choice-title">A team</span>
+            <span class="choice-desc">You are an Architect. Add the other Architects, and Developers if you like.</span></span>
+        </label>
+        <label class="choice" id="choice-skip">
+          <input type="radio" name="roles-mode" value="skip" />
+          <span><span class="choice-title">Skip for now</span>
+            <span class="choice-desc">No roles: everyone is an Architect. Set them up later with <em>BluePrint: Configure Roles</em>.</span></span>
+        </label>
+      </div>
+
+      <div id="roles-team-fields" class="hidden">
+        <div class="field">
+          <label for="roles-architects">Other Architects</label>
+          <textarea id="roles-architects" style="min-height:60px" placeholder="lead@company.com"></textarea>
+        </div>
+        <div class="field">
+          <label for="roles-developers">Developers <span style="font-weight:normal;opacity:0.7">(optional, for the record)</span></label>
+          <textarea id="roles-developers" style="min-height:60px" placeholder="dev1@company.com&#10;dev2@company.com"></textarea>
+          <p class="hint">One email per line, matching each person's <code>git config user.email</code>. Anyone not listed as an Architect is a Developer anyway.</p>
+        </div>
+      </div>
+
+      <p class="hint" id="roles-commit-hint">
+        Saved to <code>.blueprint/roles.json</code>. Commit it so the whole team shares it. Roles are an agreement, not a lock:
+        anyone who can push can edit that file, so protect it with code review (for example a CODEOWNERS rule).
+      </p>
+
+      <div id="roles-error" class="inline-error hidden" style="margin-top:14px"></div>
+
+      <div class="actions">
+        <button class="secondary" id="btn-roles-back">← Back</button>
+        <button id="btn-roles-next">Continue →</button>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════
          SCREEN 2 — System Description
     ════════════════════════════════════ -->
     <div id="screen-description" class="hidden">
       <h2>Describe Your System</h2>
       <p class="subtitle">Describe your project in plain English. BluePrint will extract components, data flow, and constraints to generate your initial <code>ARCH.md</code>.</p>
+      <p class="roles-note hidden" id="roles-note"></p>
 
       <div class="field">
         <label for="system-name">Project Name</label>
@@ -458,7 +552,7 @@
 
   // ── Screen management ──────────────────────────────
   const allScreens = [
-    'screen-key-choice', 'screen-provider', 'screen-description', 'screen-arch-loading',
+    'screen-key-choice', 'screen-provider', 'screen-roles', 'screen-description', 'screen-arch-loading',
     'screen-arch-done', 'screen-constraints', 'screen-done', 'screen-error',
   ];
 
@@ -475,15 +569,13 @@
   }
 
   // ── Step indicator ─────────────────────────────────
+  // Steps: 1 provider, 2 team & roles, 3 describe system, 4 constraints.
+  const STEPS = { provider: 1, roles: 2, description: 3, constraints: 4 };
   function setDots(step) {
-    // step: 1, 2, 3, or 'done'
-    const dots = [
-      document.getElementById('dot-1'),
-      document.getElementById('dot-2'),
-      document.getElementById('dot-3'),
-    ];
-    const labels = ['Step 1 of 3', 'Step 2 of 3', 'Step 3 of 3', 'Complete'];
-    const stepIdx = step === 'done' ? 3 : step - 1;
+    // step: 1–4, or 'done'
+    const dots = [1, 2, 3, 4].map(n => document.getElementById(`dot-${n}`));
+    const labels = ['Step 1 of 4', 'Step 2 of 4', 'Step 3 of 4', 'Step 4 of 4', 'Complete'];
+    const stepIdx = step === 'done' ? 4 : step - 1;
 
     dots.forEach((d, i) => {
       d.className = 'step-dot';
@@ -497,16 +589,141 @@
   setDots(1);
   showScreen('screen-provider');
 
+  // ── After the provider: roles step, unless roles.json already exists ─
+  let roles = null; // { identity, role, configured, architects, developers }
+
+  function afterProvider() {
+    if (roles && !roles.configured) {
+      showRolesScreen();
+    } else {
+      showDescription();
+    }
+  }
+
+  function showDescription() {
+    renderRolesNote();
+    showScreen('screen-description');
+    setDots(STEPS.description);
+  }
+
+  // One line on the description screen saying which roles are in force.
+  let rolesSkipped = false;
+  function renderRolesNote() {
+    const note = document.getElementById('roles-note');
+    if (!roles) { note.classList.add('hidden'); return; }
+    if (roles.configured) {
+      const a = roles.architects.length, d = roles.developers.length;
+      note.textContent = `Roles from .blueprint/roles.json: you are ${roles.role === 'architect' ? 'an Architect' : 'a Developer'} ` +
+        `(${a} Architect${a !== 1 ? 's' : ''}${d ? `, ${d} Developer${d !== 1 ? 's' : ''}` : ''}).`;
+    } else if (rolesSkipped) {
+      note.textContent = 'No roles configured: everyone is an Architect. Use BluePrint: Configure Roles to set them up later.';
+    } else {
+      note.classList.add('hidden');
+      return;
+    }
+    note.classList.remove('hidden');
+  }
+
+  // ── Team & roles ───────────────────────────────────
+  function setRolesError(message) {
+    const box = document.getElementById('roles-error');
+    box.textContent = message || '';
+    box.classList.toggle('hidden', !message);
+  }
+
+  function rolesMode() {
+    return document.querySelector('input[name="roles-mode"]:checked')?.value;
+  }
+
+  function renderIdentity() {
+    const box = document.getElementById('roles-identity');
+    box.replaceChildren();
+    const known = !!(roles && roles.identity);
+    if (known) {
+      box.append('You: ');
+      const strong = document.createElement('strong');
+      strong.textContent = roles.identity;
+      box.append(strong, ' (from git config user.email)');
+    } else {
+      box.append("Your git email isn't set, so BluePrint can't tell who you are. Run ");
+      const code = document.createElement('code');
+      code.textContent = 'git config user.email you@example.com';
+      const again = document.createElement('a');
+      again.href = '#';
+      again.textContent = 'Check again';
+      again.addEventListener('click', (e) => { e.preventDefault(); vscode.postMessage({ command: 'refreshRoles' }); });
+      box.append(code, ', then ', again, '.');
+    }
+    // Roles can't name you without an identity, so only "Skip" is possible until git knows your email.
+    ['solo', 'team'].forEach(mode => {
+      const label = document.getElementById(`choice-${mode}`);
+      label.classList.toggle('disabled', !known);
+      label.querySelector('input').disabled = !known;
+    });
+    if (!known && rolesMode() !== 'skip') {
+      document.querySelectorAll('input[name="roles-mode"]').forEach(r => { r.checked = r.value === 'skip'; });
+    } else if (known && !rolesMode()) {
+      document.querySelector('input[name="roles-mode"][value="solo"]').checked = true;
+    }
+    updateRolesFields();
+  }
+
+  function updateRolesFields() {
+    const mode = rolesMode();
+    document.getElementById('roles-team-fields').classList.toggle('hidden', mode !== 'team');
+    document.getElementById('roles-commit-hint').classList.toggle('hidden', mode === 'skip');
+  }
+
+  function showRolesScreen() {
+    rolesStepShown = true;
+    setRolesError('');
+    renderIdentity();
+    showScreen('screen-roles');
+    setDots(STEPS.roles);
+  }
+
+  document.querySelectorAll('input[name="roles-mode"]').forEach(r =>
+    r.addEventListener('change', () => { setRolesError(''); updateRolesFields(); })
+  );
+
+  document.getElementById('btn-roles-back').addEventListener('click', () => {
+    showScreen('screen-provider');
+    setDots(STEPS.provider);
+  });
+
+  function resetRolesButton() {
+    const btn = document.getElementById('btn-roles-next');
+    btn.disabled = false;
+    btn.textContent = 'Continue →';
+  }
+
+  document.getElementById('btn-roles-next').addEventListener('click', () => {
+    const mode = rolesMode();
+    setRolesError('');
+    if (mode === 'skip') {
+      rolesSkipped = true;
+      showDescription();
+      return;
+    }
+    const btn = document.getElementById('btn-roles-next');
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    vscode.postMessage({
+      command: 'saveRoles',
+      architects: mode === 'team' ? document.getElementById('roles-architects').value : '',
+      developers: mode === 'team' ? document.getElementById('roles-developers').value : '',
+    });
+  });
+
   // ── Screen 0: Default key choice ───────────────────
   document.getElementById('btn-use-default').addEventListener('click', () => {
     vscode.postMessage({ command: 'useDefault' });
-    showScreen('screen-description');
-    setDots(2);
+    afterProvider();
   });
 
   document.getElementById('btn-use-own').addEventListener('click', () => {
     showScreen('screen-provider');
-    setDots(1);
+    setDots(STEPS.provider);
   });
 
   // ── Screen 1: Provider ─────────────────────────────
@@ -557,9 +774,15 @@
   }
 
   // ── Screen 2: Description ──────────────────────────
+  // Back goes to the roles step only if this run showed it (roles.json absent, or just created by it).
+  let rolesStepShown = false;
   document.getElementById('btn-description-back').addEventListener('click', () => {
-    showScreen('screen-provider');
-    setDots(1);
+    if (rolesStepShown) {
+      showRolesScreen();
+    } else {
+      showScreen('screen-provider');
+      setDots(STEPS.provider);
+    }
   });
 
   document.getElementById('btn-generate').addEventListener('click', () => {
@@ -637,8 +860,7 @@
   });
 
   document.getElementById('btn-retry').addEventListener('click', () => {
-    showScreen('screen-description');
-    setDots(2);
+    showDescription();
   });
 
   // ── Progress bar helper ────────────────────────────
@@ -659,8 +881,24 @@
       case 'providerSaved':
         resetProviderButton();
         document.getElementById('api-key-input').value = '';
-        showScreen('screen-description');
-        setDots(2);
+        afterProvider();
+        break;
+
+      case 'rolesSaved':
+        resetRolesButton();
+        roles = msg.roles;
+        showDescription();
+        break;
+
+      case 'rolesError':
+        resetRolesButton();
+        setRolesError(msg.message);
+        break;
+
+      // "Check again" after setting the git email
+      case 'rolesInfo':
+        roles = msg.roles;
+        renderIdentity();
         break;
 
       case 'providerError':
@@ -671,19 +909,19 @@
 
       case 'init':
         keyPages = msg.keyPages || {};
+        roles = msg.roles || null;
         updateKeyHelp();
         if (msg.hasProvider) {
           if (msg.provider) document.getElementById('provider-select').value = msg.provider;
-          showScreen('screen-description');
-          setDots(2);
+          afterProvider();
         } else if (msg.hasDefault) {
           document.getElementById('default-provider-label').textContent =
             msg.defaultProviderLabel ? `${msg.defaultProviderLabel} API key` : 'API key';
           showScreen('screen-key-choice');
-          setDots(1);
+          setDots(STEPS.provider);
         } else {
           showScreen('screen-provider');
-          setDots(1);
+          setDots(STEPS.provider);
         }
         break;
 
@@ -705,7 +943,7 @@
       // Begin constraint elicitation
       case 'showQuestion': {
         showScreen('screen-constraints');
-        setDots(3);
+        setDots(STEPS.constraints);
         setInlineError('');
         setDraftButtonsDisabled(false);
         setProgress(msg.index, msg.total, msg.isFollowUp);

@@ -114,6 +114,11 @@
       ? `Highlighted: sections changed in the last ${msg.recentLimit} changes`
       : (msg.historyCount ? 'No sections changed in the recent history' : 'No changes recorded since initialization');
     document.getElementById('btn-revert').disabled = !msg.historyCount;
+    const regen = document.getElementById('btn-regenerate');
+    regen.disabled = msg.isArchitect === false;
+    regen.title = msg.isArchitect === false
+      ? 'Only an Architect can regenerate ARCH.md (see BluePrint: Configure Roles)'
+      : 'Re-derive ARCH.md from the codebase (Architect only)';
   }
 
   document.getElementById('btn-source').addEventListener('click', () => vscode.postMessage({ command: 'openSource' }));

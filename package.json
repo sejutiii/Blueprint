@@ -73,7 +73,7 @@
       },
       {
         "command": "blueprint.configureRoles",
-        "title": "BluePrint: Configure Roles (Architects)",
+        "title": "BluePrint: Configure Team & Roles",
         "icon": "$(organization)"
       },
       {
@@ -143,11 +143,11 @@
         },
         {
           "command": "blueprint.approveAdr",
-          "when": "blueprint.initialized"
+          "when": "blueprint.initialized && blueprint.isArchitect"
         },
         {
           "command": "blueprint.rejectAdr",
-          "when": "blueprint.initialized"
+          "when": "blueprint.initialized && blueprint.isArchitect"
         },
         {
           "command": "blueprint.searchAdrs",
@@ -166,7 +166,7 @@
         },
         {
           "command": "blueprint.regenerateArch",
-          "when": "blueprint.initialized"
+          "when": "blueprint.initialized && blueprint.isArchitect"
         }
       ],
       "view/title": [
@@ -194,22 +194,22 @@
       "view/item/context": [
         {
           "command": "blueprint.approveAdr",
-          "when": "view == blueprint.adrBrowser && viewItem == adr-pending",
+          "when": "view == blueprint.adrBrowser && viewItem == adr-pending && blueprint.isArchitect",
           "group": "inline@1"
         },
         {
           "command": "blueprint.rejectAdr",
-          "when": "view == blueprint.adrBrowser && viewItem == adr-pending",
+          "when": "view == blueprint.adrBrowser && viewItem == adr-pending && blueprint.isArchitect",
           "group": "inline@2"
         },
         {
           "command": "blueprint.approveAdr",
-          "when": "view == blueprint.adrBrowser && viewItem == adr-pending",
+          "when": "view == blueprint.adrBrowser && viewItem == adr-pending && blueprint.isArchitect",
           "group": "review@1"
         },
         {
           "command": "blueprint.rejectAdr",
-          "when": "view == blueprint.adrBrowser && viewItem == adr-pending",
+          "when": "view == blueprint.adrBrowser && viewItem == adr-pending && blueprint.isArchitect",
           "group": "review@2"
         }
       ]

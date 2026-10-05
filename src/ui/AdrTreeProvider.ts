@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { ADR, AdrStatus } from "../types";
+import type { Role } from "../access/roles";
 
 export function iconForStatus(status: AdrStatus): string {
   switch (status) {
@@ -30,10 +31,13 @@ export function adrMatches(adr: ADR, query: string): boolean {
 }
 
 class AdrItem extends vscode.TreeItem {
-  constructor(readonly adr: ADR) {
+  constructor(readonly adr: ADR, canApprove: boolean) {
     super(adr.title, vscode.TreeItemCollapsibleState.None);
     const pending = adr.status === "proposed";
-    this.description = pending ? `#${adr.id} · pending approval` : `#${adr.id}`;
+    // Architects get Approve/Reject buttons on pending items (menus check blueprint.isArchitect).
+    this.description = !pending ? `#${adr.id}`
+      : canApprove ? `#${adr.id} · needs your approval`
+      : `#${adr.id} · waiting for an Architect`;
     this.tooltip = new vscode.MarkdownString(
       `**ADR-${adr.id}** · ${STATUS_LABELS[adr.status]}\n\n${adr.context}` +
       (adr.proposedBy ? `\n\nProposed by ${adr.proposedBy}` : "") +
@@ -55,9 +59,16 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrItem | vscode
 
   private adrs: ADR[] = [];
   private filter = "";
+  private role: Role = "architect";
 
   refresh(adrs: ADR[]): void {
     this.adrs = adrs;
+    this._onDidChangeTreeData.fire(undefined);
+  }
+
+  setRole(role: Role): void {
+    if (role === this.role) { return; }
+    this.role = role;
     this._onDidChangeTreeData.fire(undefined);
   }
 
@@ -106,7 +117,7 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrItem | vscode
         `${STATUS_LABELS[status]} (${group.length})`,
         vscode.TreeItemCollapsibleState.Expanded
       );
-      items.push(header, ...group.map((a) => new AdrItem(a)));
+      items.push(header, ...group.map((a) => new AdrItem(a, this.role === "architect")));
     }
     return items;
   }

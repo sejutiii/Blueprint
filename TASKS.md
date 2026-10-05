@@ -5,7 +5,7 @@
 **State.** All work is committed on branch `complete-srs` (`main` is untouched); the only untracked files are the `test/` fixture projects. `npm test` (104 tests) and `npm run typecheck` pass; `npm run build` and `npm run package` work. Phases 1–4 are done except the items below.
 
 **Next steps, in order**
-1. **UI fixes** — see "Phase 3b — UI review" below. U1–U6 are plain fixes; U7–U10 have a recommendation that still needs the developer's OK. Done first so the manual checklist tests the updated UI.
+1. **UI fixes** — see "Phase 3b — UI review" below. U1–U6 are plain fixes; U7–U10 have a recommendation that still needs the developer's OK; U16 is an open question. U11–U15 (roles) are done. Done first so the manual checklist tests the updated UI.
 2. **Run the manual checklist** in [docs/TESTING.md](docs/TESTING.md) in the Extension Development Host (F5) against the projects in `test/`. *Nothing has been run inside VS Code yet* — expect a few more UI fixes. Fix whatever it finds.
 3. **Small items:** B15 (ESLint config), P3 (gitignore `test/`), E6 (settings — present a plan first).
 4. **E5** non-git diff fallback — present a plan first.
@@ -35,6 +35,7 @@ Legend: `[ ]` todo · `[x]` done · **SRS** = section/test-case it satisfies.
 - **D6 — Regeneration is Architect-only** (a whole-document rewrite doesn't fit the per-ADR approval queue). **Viewer highlights the last 5 recorded changes** (not a time window).
 - **D7 — Bring your own key in public builds.** The built-in default key exists only in local dev builds (from `.env`).
 - **D8 — Packaging:** one VSIX per platform + universal fallback; embedding model downloaded on first use (not bundled).
+- **D9 — Roles are set up during initialization** (new wizard step when there is no `roles.json`; an existing one is used as is). Once Architects are named, only they can initialize/re-initialize or change roles.
 - **D4 — Orchestrator split kept** (`src/orchestrator/Orchestrator.ts`): pipelines live there, `extension.ts` is UI only.
 
 ## Phase 1 — Bugs & correctness (fix before adding features)
@@ -89,6 +90,14 @@ Legend: `[ ]` todo · `[x]` done · **SRS** = section/test-case it satisfies.
 - [ ] **U8 Sidebar "Audit Trail" duplicates the ADR list** (same ADRs, sorted by date; no reviews / pre-checks / ARCH.md changes). *Recommended:* show the last ~20 entries from `audit-log.json` there, with a title button to open the full trail. *Alternative:* remove the view.
 - [ ] **U9 No way to change LLM provider / API key** without re-running Initialize (which warns about regenerating ARCH.md). *Recommended:* new command "BluePrint: Change LLM Provider / API Key" — quick pick provider → password input → validate → save; linked from the Hub. Overlaps E6.
 - [ ] **U10 Search vs Filter ADRs overlap.** *Recommended:* keep both (Search jumps to one ADR, Filter narrows the list); covered by the U3 fixes.
+
+**Roles in the UI** (agreed 2026-10-06, built)
+- [x] **U11 Team & roles setup.** Wizard step 2 of 4 when there is no `roles.json` (Just me / A team / Skip; needs a git email for the first two). If `roles.json` exists the step is skipped and the next screen says which role you have. "Configure Team & Roles" opens the same form as a panel (read-only for Developers; "Edit roles.json directly" stays). The person saving is always an Architect. Initialize is Architect-only once roles exist (D9).
+- [x] **U12 Show your role:** status bar tooltip ("You: … · Architect") and the ADR Browser title ("You: Developer").
+- [x] **U13 Architect-only controls hidden from Developers:** Approve/Reject (sidebar + palette), Regenerate (palette; disabled in the ARCH.md viewer). Pending ADRs read "needs your approval" or "waiting for an Architect". Approve/Reject check the role before asking for a note.
+- [x] **U14 Refresh from disk:** watches `.blueprint/adr-index.json`, `roles.json` and `arch.json`, so a `git pull` (or a hand edit of `roles.json`) updates the sidebar, pending count, role and initialized state without a reload.
+- [x] **U15 Honour-system note** in both roles screens (roles.json is protected by code review, e.g. CODEOWNERS, not by BluePrint). *Repeat it in the README (P1).*
+- [ ] **U16 Open question:** "Revert ARCH.md" is still allowed for Developers, although it rewrites the whole document like Regenerate. Make it Architect-only too?
 
 ## Phase 4 — Tests (SRS §5, T1–T53)
 

@@ -4,6 +4,7 @@ import { FileStore } from "../storage/FileStore";
 import { AdrStore } from "../storage/AdrStore";
 import { AuditLog } from "../storage/AuditLog";
 import { AccessControl } from "../access/AccessControl";
+import { Role, buildRolesManifest, rolesConfigured } from "../access/roles";
 import { ArchitectureAgent } from "../agents/ArchitectureAgent";
 import { ConstraintElicitationAgent } from "../agents/ConstraintElicitationAgent";
 import { ComplianceAgent } from "../agents/ComplianceAgent";
@@ -41,6 +42,15 @@ export interface PreCheckAdr {
 export interface PreCheckOutcome {
   result: PreCheckResult;
   adrs: PreCheckAdr[];
+}
+
+/** What the UI shows about roles: who you are, your role, and the team in roles.json. */
+export interface RolesView {
+  identity: string | null;
+  role: Role;
+  configured: boolean;   // roles.json names at least one Architect
+  architects: string[];
+  developers: string[];
 }
 
 export interface OrchestratorHooks {
@@ -114,7 +124,9 @@ export class Orchestrator {
 
   // ── PROJECT_INIT ──────────────────────────────────────────────────────────
 
+  // Writes the whole ARCH.md, so once roles are configured only an Architect may do it (like regeneration, D6).
   async generateArchitecture(systemDescription: string, systemName?: string): Promise<ArchBlueprint> {
+    await this.requireArchitect("initialize BluePrint, because it writes the whole ARCH.md");
     const ws        = this.workspace();
     const llm       = await this.requireLlm();
     const blueprint = await new ArchitectureAgent(llm).generate(systemDescription);
@@ -304,20 +316,21 @@ Location: ${violation.affectedCodeLocation}` : "";
 
   // ── Living ARCH.md: regenerate from the codebase (Architect-only) ─────────
 
-  private async requireArchitect(): Promise<string | undefined> {
-    const actor = await this.workspace().access.resolveActor();
-    if (actor.role !== "architect") {
-      throw new BlueprintError(
-        "Only an Architect can regenerate ARCH.md, because it rewrites the whole document. " +
-        "Ask an Architect listed in .blueprint/roles.json to run it."
-      );
+  private async requireArchitect(action: string): Promise<string | undefined> {
+    const { identity, role, manifest } = await this.workspace().access.resolveRoles();
+    if (role !== "architect") {
+      const who = manifest?.architects.length ? ` Architects: ${manifest.architects.join(", ")}.` : "";
+      const you = identity
+        ? `You are ${identity}, a Developer in .blueprint/roles.json.`
+        : "BluePrint can't identify you (git user.email is unset), so you count as a Developer.";
+      throw new BlueprintError(`Only an Architect can ${action}. ${you}${who}`);
     }
-    return actor.identity ?? undefined;
+    return identity ?? undefined;
   }
 
   /** Builds a proposed ARCH.md from the codebase without writing anything. */
   async proposeRegeneration(): Promise<{ blueprint: ArchBlueprint; markdown: string }> {
-    await this.requireArchitect();
+    await this.requireArchitect("regenerate ARCH.md, because it rewrites the whole document");
     const { fileStore, blueprint, root } = await this.requireInitialized();
     const llm      = await this.requireLlm();
     const snapshot = await buildCodebaseSnapshot(root);
@@ -328,7 +341,7 @@ Location: ${violation.affectedCodeLocation}` : "";
 
   /** Writes a regenerated blueprint; the previous ARCH.md is kept in history, so it can be reverted. */
   async applyRegeneration(blueprint: ArchBlueprint): Promise<void> {
-    const actor = await this.requireArchitect();
+    const actor = await this.requireArchitect("regenerate ARCH.md, because it rewrites the whole document");
     const { fileStore, audit } = this.workspace();
     await fileStore.writeArchBlueprint(blueprint, undefined, "ARCH.md regenerated from codebase");
     await audit?.append({
@@ -355,5 +368,43 @@ Location: ${violation.affectedCodeLocation}` : "";
 
   async currentActor() {
     return this.workspace().access.resolveActor();
+  }
+
+  /** Fails fast (before asking for a note) when a Developer tries to approve or reject. */
+  async requireApprover(): Promise<void> {
+    await this.requireArchitect("approve or reject decisions");
+  }
+
+  // ── Roles (SRS 3.2.5) ─────────────────────────────────────────────────────
+
+  async roles(): Promise<RolesView> {
+    const { identity, role, manifest } = await this.workspace().access.resolveRoles();
+    return {
+      identity, role,
+      configured: rolesConfigured(manifest),
+      architects: manifest?.architects ?? [],
+      developers: manifest?.developers ?? [],
+    };
+  }
+
+  /**
+   * Saves roles.json from the setup wizard or the roles panel. Creating it is open to anyone (no
+   * roles yet means everyone is an Architect); once Architects are named, only they may change it.
+   */
+  async saveRoles(otherArchitects: string[], developers: string[]): Promise<RolesView> {
+    const { access, audit } = this.workspace();
+    await this.requireArchitect("change roles");
+    const identity = await access.resolveIdentity();
+    const built = buildRolesManifest(identity, otherArchitects, developers);
+    if ("error" in built) { throw new BlueprintError(built.error); }
+    await access.writeManifest(built.manifest);
+    await audit?.append({
+      eventType: "roles_updated",
+      summary:   `Roles updated: ${built.manifest.architects.length} Architect(s) (${built.manifest.architects.join(", ")}), ` +
+                 `${built.manifest.developers?.length ?? 0} Developer(s)`,
+      actor:     identity ?? undefined,
+    });
+    this.hooks.onDataChanged();
+    return this.roles();
   }
 }

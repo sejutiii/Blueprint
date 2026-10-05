@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-{{nonce}}';">
+  <title>BluePrint: Team &amp; Roles</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--vscode-font-family);
+      font-size: var(--vscode-font-size);
+      color: var(--vscode-foreground);
+      background: var(--vscode-editor-background);
+      padding: 32px 24px 60px;
+      max-width: 560px;
+    }
+    h2 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+    .subtitle { color: var(--vscode-descriptionForeground); font-size: 12px; margin-bottom: 20px; line-height: 1.6; }
+    code { font-family: var(--vscode-editor-font-family); font-size: 11px; }
+
+    .identity {
+      font-size: 12px; padding: 8px 12px; border-radius: 4px;
+      background: var(--vscode-textBlockQuote-background);
+      margin-bottom: 16px; line-height: 1.6;
+    }
+    .role-badge {
+      display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.4px;
+      padding: 1px 6px; border-radius: 3px; margin-left: 6px;
+      background: var(--vscode-badge-background); color: var(--vscode-badge-foreground);
+    }
+    .notice {
+      font-size: 12px; line-height: 1.6; padding: 8px 12px; margin-bottom: 16px; border-radius: 4px;
+      background: var(--vscode-editorInfo-background, rgba(0, 122, 204, 0.1));
+      border: 1px solid var(--vscode-editorInfo-border, rgba(0, 122, 204, 0.4));
+    }
+
+    .field { margin-bottom: 16px; }
+    label { display: block; font-size: 12px; font-weight: 500; margin-bottom: 5px; }
+    textarea {
+      width: 100%; min-height: 70px; resize: vertical; line-height: 1.5;
+      background: var(--vscode-input-background); color: var(--vscode-input-foreground);
+      border: 1px solid var(--vscode-input-border); border-radius: 3px;
+      padding: 7px 10px; font-family: inherit; font-size: 13px; outline: none;
+    }
+    textarea:focus { border-color: var(--vscode-focusBorder); }
+    textarea:read-only { opacity: 0.7; }
+    .fixed {
+      font-size: 12px; padding: 6px 10px; border-radius: 3px; margin-bottom: 6px;
+      border: 1px dashed var(--vscode-input-border);
+    }
+    .hint { font-size: 11px; color: var(--vscode-descriptionForeground); margin-top: 5px; line-height: 1.5; }
+
+    .actions { display: flex; align-items: center; gap: 12px; margin-top: 20px; flex-wrap: wrap; }
+    button {
+      padding: 7px 18px; border: none; border-radius: 3px; cursor: pointer;
+      font-family: inherit; font-size: 13px;
+      background: var(--vscode-button-background); color: var(--vscode-button-foreground);
+    }
+    button:hover { background: var(--vscode-button-hoverBackground); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    a { color: var(--vscode-textLink-foreground); text-decoration: none; cursor: pointer; }
+    a:hover { text-decoration: underline; }
+    .status { font-size: 12px; color: var(--vscode-descriptionForeground); }
+
+    .inline-error {
+      font-size: 12px; color: var(--vscode-errorForeground);
+      background: var(--vscode-inputValidation-errorBackground);
+      border: 1px solid var(--vscode-inputValidation-errorBorder);
+      border-radius: 3px; padding: 8px 10px; margin-top: 14px; white-space: pre-wrap;
+    }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <h2>Team &amp; Roles</h2>
+  <p class="subtitle">
+    <strong>Architects</strong> approve decisions, and their own decisions update ARCH.md straight away.
+    Everyone else is a <strong>Developer</strong>: their decisions wait for an Architect's approval.
+  </p>
+
+  <div class="identity" id="identity">Loading…</div>
+  <div class="notice hidden" id="notice"></div>
+
+  <div class="field">
+    <label for="architects">Architects</label>
+    <div class="fixed hidden" id="self-architect"></div>
+    <textarea id="architects" placeholder="Other Architects, one email per line"></textarea>
+  </div>
+  <div class="field">
+    <label for="developers">Developers <span style="font-weight:normal;opacity:0.7">(optional, for the record)</span></label>
+    <textarea id="developers" placeholder="dev1@company.com&#10;dev2@company.com"></textarea>
+    <p class="hint">One email per line, matching each person's <code>git config user.email</code>. Anyone not listed as an Architect is a Developer anyway.</p>
+  </div>
+
+  <p class="hint">
+    Stored in <code>.blueprint/roles.json</code>. Commit it so the whole team shares it. Roles are an agreement, not a lock:
+    anyone who can push can edit that file, so protect it with code review (for example a CODEOWNERS rule).
+  </p>
+
+  <div id="error" class="inline-error hidden"></div>
+
+  <div class="actions">
+    <button id="btn-save">Save roles</button>
+    <span class="status" id="status"></span>
+    <a id="link-json">Edit roles.json directly</a>
+  </div>
+
+<script nonce="{{nonce}}">
+  const vscode = acquireVsCodeApi();
+  let dirty = false; // unsaved edits: don't overwrite them when roles.json changes on disk
+
+  const $ = (id) => document.getElementById(id);
+
+  function setError(message) {
+    $('error').textContent = message || '';
+    $('error').classList.toggle('hidden', !message);
+  }
+
+  function render(roles, force) {
+    const canEdit = !!roles.identity && (!roles.configured || roles.role === 'architect');
+
+    const identity = $('identity');
+    identity.replaceChildren();
+    if (roles.identity) {
+      identity.append('You: ');
+      const strong = document.createElement('strong');
+      strong.textContent = roles.identity;
+      const badge = document.createElement('span');
+      badge.className = 'role-badge';
+      badge.textContent = roles.role === 'architect' ? 'ARCHITECT' : 'DEVELOPER';
+      identity.append(strong, badge);
+    } else {
+      identity.append("Your git email isn't set, so BluePrint can't tell who you are. Run ");
+      const code = document.createElement('code');
+      code.textContent = 'git config user.email you@example.com';
+      const again = document.createElement('a');
+      again.textContent = 'Check again';
+      again.addEventListener('click', () => vscode.postMessage({ command: 'refresh' }));
+      identity.append(code, ', then ', again, '.');
+    }
+
+    const notice = $('notice');
+    let text = '';
+    if (!roles.identity) {
+      text = '';
+    } else if (!roles.configured) {
+      text ='No roles are configured yet, so everyone is an Architect. Saving creates .blueprint/roles.json with you as an Architect.';
+    } else if (!canEdit) {
+      text = 'Only an Architect can change roles. Ask one of the Architects below.';
+    }
+    notice.textContent = text;
+    notice.classList.toggle('hidden', !text);
+
+    // You are always an Architect when you save, so you can't lock yourself out by accident.
+    const self = (roles.identity || '').toLowerCase();
+    $('self-architect').textContent = `${roles.identity} (you)`;
+    $('self-architect').classList.toggle('hidden', !canEdit);
+
+    if (!dirty || force) {
+      const others = canEdit ? roles.architects.filter(a => a !== self) : roles.architects;
+      $('architects').value = others.join('\n');
+      $('developers').value = roles.developers.join('\n');
+      dirty = false;
+    }
+    $('architects').placeholder = canEdit ? 'Other Architects, one email per line' : '';
+    $('architects').readOnly = !canEdit;
+    $('developers').readOnly = !canEdit;
+    $('btn-save').disabled = !canEdit;
+  }
+
+  $('architects').addEventListener('input', () => { dirty = true; $('status').textContent = ''; });
+  $('developers').addEventListener('input', () => { dirty = true; $('status').textContent = ''; });
+
+  $('btn-save').addEventListener('click', () => {
+    setError('');
+    $('btn-save').disabled = true;
+    $('status').textContent = 'Saving…';
+    vscode.postMessage({ command: 'save', architects: $('architects').value, developers: $('developers').value });
+  });
+
+  $('link-json').addEventListener('click', () => vscode.postMessage({ command: 'openJson' }));
+
+  window.addEventListener('message', ({ data: msg }) => {
+    switch (msg.command) {
+      case 'render':
+        render(msg.roles, false);
+        break;
+      case 'saved':
+        render(msg.roles, true);
+        $('status').textContent = 'Saved. Remember to commit .blueprint/roles.json.';
+        break;
+      case 'error':
+        $('btn-save').disabled = false;
+        $('status').textContent = '';
+        setError(msg.message);
+        break;
+    }
+  });
+
+  vscode.postMessage({ command: 'ready' });
+</script>
+</body>
+</html>

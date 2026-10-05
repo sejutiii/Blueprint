@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
-import { roleFor, parseRolesManifest } from "../src/access/roles";
+import { roleFor, parseRolesManifest, parseEmailList, buildRolesManifest, rolesConfigured } from "../src/access/roles";
+import { Orchestrator } from "../src/orchestrator/Orchestrator";
 import { AccessControl, Actor } from "../src/access/AccessControl";
 import { AdrStore } from "../src/storage/AdrStore";
 import { FileStore } from "../src/storage/FileStore";
@@ -12,7 +13,7 @@ import { EmbeddingService } from "../src/embeddings/EmbeddingService";
 import { adrFilename } from "../src/prompts/adrPrompts";
 import { ElicitationSession } from "../src/agents/ElicitationSession";
 import { CONSTRAINT_QUESTIONS } from "../src/prompts/constraintPrompts";
-import { Uri } from "./mocks/vscode";
+import { Uri, __setWorkspaceRoot } from "./mocks/vscode";
 import { blueprint, tempDir, removeDir } from "./helpers";
 
 describe("roles (SRS 3.2.5 role lookup)", () => {
@@ -37,6 +38,88 @@ describe("roles (SRS 3.2.5 role lookup)", () => {
     expect(parseRolesManifest("{not json")).toBeNull();
     expect(parseRolesManifest(null)).toBeNull();
     expect(parseRolesManifest('{"architects": [1, "a@b.c"]}')).toEqual({ architects: ["a@b.c"], developers: [] });
+  });
+});
+
+describe("roles setup (wizard step and Team & Roles panel)", () => {
+  it("parses one-per-line or comma-separated email lists", () => {
+    expect(parseEmailList(" a@x.io\n\nb@x.io, c@x.io ;d@x.io ")).toEqual(["a@x.io", "b@x.io", "c@x.io", "d@x.io"]);
+    expect(parseEmailList("   ")).toEqual([]);
+  });
+
+  it("the person saving is always an Architect; emails are normalized and de-duplicated", () => {
+    const built = buildRolesManifest("Me@X.io", ["lead@x.io", "LEAD@x.io", "me@x.io"], ["dev@x.io", "Lead@x.io", "dev@x.io"]);
+    expect(built).toEqual({ manifest: { architects: ["me@x.io", "lead@x.io"], developers: ["dev@x.io"] } });
+  });
+
+  it("'Just me' makes the saver the only Architect", () => {
+    expect(buildRolesManifest("me@x.io", [], [])).toEqual({ manifest: { architects: ["me@x.io"], developers: [] } });
+  });
+
+  it("rejects invalid emails and a missing git identity", () => {
+    expect(buildRolesManifest("me@x.io", ["not-an-email"], ["also bad"])).toEqual({ error: "Not a valid email: not-an-email, also bad" });
+    expect("error" in buildRolesManifest(null, [], [])).toBe(true);
+  });
+
+  it("roles count as configured only once an Architect is named", () => {
+    expect(rolesConfigured(null)).toBe(false);
+    expect(rolesConfigured({ architects: [], developers: ["d@x.io"] })).toBe(false);
+    expect(rolesConfigured({ architects: ["a@x.io"] })).toBe(true);
+  });
+});
+
+describe("Orchestrator — Architect-only actions", () => {
+  let dir: string;
+  let identity: string | null;
+  const orchestrator = new Orchestrator({} as never, { onState: () => {}, onDataChanged: () => {} });
+  const rolesFile = () => path.join(dir, ".blueprint", "roles.json");
+  const writeRoles = (m: object) => {
+    fs.mkdirSync(path.join(dir, ".blueprint"), { recursive: true });
+    fs.writeFileSync(rolesFile(), JSON.stringify(m));
+  };
+
+  beforeEach(() => {
+    dir = tempDir();
+    __setWorkspaceRoot(dir);
+    vi.spyOn(AccessControl.prototype, "resolveIdentity").mockImplementation(async () => identity);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    __setWorkspaceRoot(null);
+    removeDir(dir);
+  });
+
+  it("without roles.json anyone can create it, and becomes an Architect", async () => {
+    identity = "me@x.io";
+    expect(await orchestrator.roles()).toMatchObject({ role: "architect", configured: false });
+    const saved = await orchestrator.saveRoles(["lead@x.io"], ["dev@x.io"]);
+    expect(saved).toMatchObject({ role: "architect", configured: true, architects: ["me@x.io", "lead@x.io"], developers: ["dev@x.io"] });
+    expect(JSON.parse(fs.readFileSync(rolesFile(), "utf8")).architects).toEqual(["me@x.io", "lead@x.io"]);
+    expect((await new AuditLog(Uri.file(dir) as never).getAll()).map((e) => e.eventType)).toEqual(["roles_updated"]);
+  });
+
+  it("a Developer cannot change roles, initialize, or approve", async () => {
+    writeRoles({ architects: ["lead@x.io"], developers: ["me@x.io"] });
+    identity = "me@x.io";
+    await expect(orchestrator.saveRoles([], [])).rejects.toThrow(/Only an Architect can change roles.*Architects: lead@x\.io/);
+    // Refused before any LLM call or file write.
+    await expect(orchestrator.generateArchitecture("a shop")).rejects.toThrow(/Only an Architect can initialize/);
+    await expect(orchestrator.requireApprover()).rejects.toThrow(/Only an Architect can approve/);
+    expect(fs.existsSync(path.join(dir, "docs", "ARCH.md"))).toBe(false);
+  });
+
+  it("an Architect listed in roles.json passes the checks", async () => {
+    writeRoles({ architects: ["lead@x.io"] });
+    identity = "Lead@X.io";
+    await expect(orchestrator.requireApprover()).resolves.toBeUndefined();
+    await expect(orchestrator.saveRoles(["second@x.io"], [])).resolves.toMatchObject({ architects: ["lead@x.io", "second@x.io"] });
+  });
+
+  it("'Edit roles.json directly' without a git identity names no Architects instead of a placeholder", async () => {
+    identity = null;
+    await new AccessControl(Uri.file(dir) as never).ensureManifest();
+    expect(JSON.parse(fs.readFileSync(rolesFile(), "utf8"))).toEqual({ architects: [], developers: [] });
+    expect((await orchestrator.roles()).role).toBe("architect");
   });
 });
 

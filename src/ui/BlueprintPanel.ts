@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 
-export type PanelType = "setup" | "postGeneration" | "archViewer" | "auditTrail" | "preCheck" | "hub";
+export type PanelType = "setup" | "postGeneration" | "archViewer" | "auditTrail" | "preCheck" | "hub" | "roles";
 
 export class BlueprintPanel {
   private static panels = new Map<PanelType, BlueprintPanel>();
@@ -25,6 +25,7 @@ export class BlueprintPanel {
       auditTrail:    "BluePrint: Audit Trail",
       preCheck:      "BluePrint: Pre-Check",
       hub:           "BluePrint",
+      roles:         "BluePrint: Team & Roles",
     };
 
     this.panel = vscode.window.createWebviewPanel(

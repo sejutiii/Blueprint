@@ -9,7 +9,8 @@ import { FileStore } from "./storage/FileStore";
 import { AdrStore } from "./storage/AdrStore";
 import { AuditLog } from "./storage/AuditLog";
 import { AccessControl } from "./access/AccessControl";
-import { Orchestrator, BlueprintError, ReviewMode } from "./orchestrator/Orchestrator";
+import { Orchestrator, BlueprintError, ReviewMode, RolesView } from "./orchestrator/Orchestrator";
+import { parseEmailList } from "./access/roles";
 import { ConstraintElicitationAgent } from "./agents/ConstraintElicitationAgent";
 import { ElicitationSession, WizardQuestion } from "./agents/ElicitationSession";
 import { ConstraintDraft } from "./prompts/constraintPrompts";
@@ -22,6 +23,7 @@ import MarkdownIt from "markdown-it";
 
 let statusBar: StatusBarManager;
 let adrTreeProvider: AdrTreeProvider;
+let adrTreeView: vscode.TreeView<unknown>;
 let auditTrailProvider: AuditTrailTreeProvider;
 let orchestrator: Orchestrator;
 
@@ -57,8 +59,9 @@ export function activate(context: vscode.ExtensionContext): void {
     onDataChanged: () => { void refreshProviders(); },
   });
 
+  adrTreeView = vscode.window.createTreeView("blueprint.adrBrowser", { treeDataProvider: adrTreeProvider });
   context.subscriptions.push(
-    vscode.window.registerTreeDataProvider("blueprint.adrBrowser", adrTreeProvider),
+    adrTreeView,
     vscode.window.registerTreeDataProvider("blueprint.auditTrail", auditTrailProvider),
     statusBar
   );
@@ -101,22 +104,27 @@ export function activate(context: vscode.ExtensionContext): void {
   const unsubscribe = AuditLog.onAppend(() => { void pushAuditTrail(); });
   context.subscriptions.push({ dispose: unsubscribe });
 
-  // Keep the ARCH.md viewer live: re-render on edits to ARCH.md or new history entries.
   const folder = vscode.workspace.workspaceFolders?.[0];
   if (folder) {
-    const watcher = vscode.workspace.createFileSystemWatcher(
-      new vscode.RelativePattern(folder, "{docs/ARCH.md,.blueprint/history/index.json}")
-    );
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const rerender = () => {
-      if (timer) { clearTimeout(timer); }
-      timer = setTimeout(() => { void renderArchViewer(); }, 250);
-    };
-    watcher.onDidChange(rerender);
-    watcher.onDidCreate(rerender);
-    watcher.onDidDelete(rerender);
-    context.subscriptions.push(watcher);
+    // Keep the ARCH.md viewer live: re-render on edits to ARCH.md or new history entries.
+    watchFiles(context, folder, "{docs/ARCH.md,.blueprint/history/index.json}", () => renderArchViewer());
+    // Decisions, roles and initialization can change under us (a teammate's commit after git pull,
+    // or a hand edit of roles.json), so the sidebar, pending count and role are re-read from disk.
+    watchFiles(context, folder, ".blueprint/{adr-index.json,roles.json,arch.json}", () => checkInitialized());
   }
+}
+
+function watchFiles(context: vscode.ExtensionContext, folder: vscode.WorkspaceFolder, glob: string, onChange: () => Promise<void>): void {
+  const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(folder, glob));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const changed = () => {
+    if (timer) { clearTimeout(timer); }
+    timer = setTimeout(() => { onChange().catch(console.error); }, 250);
+  };
+  watcher.onDidChange(changed);
+  watcher.onDidCreate(changed);
+  watcher.onDidDelete(changed);
+  context.subscriptions.push(watcher);
 }
 
 function reportError(err: unknown): void {
@@ -163,18 +171,43 @@ async function refreshProviders(): Promise<void> {
   adrTreeProvider.refresh(adrs);
   auditTrailProvider.refresh(adrs);
   statusBar.setPending(adrs.filter((a) => a.status === "proposed").length);
+  await refreshRoles();
   statusBar.refreshIdle();
   await pushAuditTrail();
 }
 
+// Safe to call any time (activation, file watcher): it never interrupts a Checking/Violation state.
 async function checkInitialized(): Promise<void> {
-  if (await orchestrator.isInitialized()) {
-    await vscode.commands.executeCommand("setContext", "blueprint.initialized", true);
-    statusBar.setIdle();
+  const initialized = await orchestrator.isInitialized();
+  await vscode.commands.executeCommand("setContext", "blueprint.initialized", initialized);
+  if (initialized) {
+    statusBar.markInitialized();
     await refreshProviders();
   } else {
     statusBar.setUninitialized();
+    await refreshRoles();
   }
+}
+
+// ── Roles: who you are, shown everywhere a role matters ────────────────────
+
+let currentRoles: RolesView | null = null;
+
+async function refreshRoles(): Promise<void> {
+  try {
+    currentRoles = await orchestrator.roles();
+  } catch {
+    currentRoles = null; // no workspace folder
+  }
+  const isArchitect = currentRoles?.role !== "developer";
+  await vscode.commands.executeCommand("setContext", "blueprint.isArchitect", isArchitect);
+  adrTreeProvider.setRole(isArchitect ? "architect" : "developer");
+  adrTreeView.description = currentRoles
+    ? `You: ${isArchitect ? "Architect" : "Developer"}`
+    : undefined;
+  statusBar.setIdentity(currentRoles);
+  if (currentRoles) { BlueprintPanel.get("roles")?.postMessage({ command: "render", roles: currentRoles }); }
+  await renderArchViewer();
 }
 
 function sendQuestion(panel: BlueprintPanel, q: WizardQuestion): void {
@@ -192,6 +225,16 @@ function sendQuestion(panel: BlueprintPanel, q: WizardQuestion): void {
 // ── Setup wizard ────────────────────────────────────────────────────────────
 
 async function handleInit(context: vscode.ExtensionContext): Promise<void> {
+  // Initializing writes the whole ARCH.md: once roles exist, it is Architect-only (checked again on generate).
+  const roles = await orchestrator.roles();
+  if (roles.configured && roles.role !== "architect") {
+    const who = roles.identity ? `You are ${roles.identity}, a Developer` : "BluePrint can't identify you (git user.email is unset)";
+    vscode.window.showErrorMessage(
+      `BluePrint: Only an Architect can initialize or re-initialize BluePrint. ${who}. Architects: ${roles.architects.join(", ")}.`
+    );
+    return;
+  }
+
   if (await orchestrator.isInitialized()) {
     const choice = await vscode.window.showWarningMessage(
       "BluePrint is already initialized in this project. Re-running setup regenerates ARCH.md " +
@@ -215,6 +258,7 @@ async function handleInit(context: vscode.ExtensionContext): Promise<void> {
     provider: existingProvider ?? null,
     hasDefault: !!defaultConfig,
     defaultProviderLabel: defaultConfig ? PROVIDER_LABELS[defaultConfig.provider] : null,
+    roles,
   });
 
   let constraintAgent: ConstraintElicitationAgent | null = null;
@@ -260,6 +304,24 @@ async function handleInit(context: vscode.ExtensionContext): Promise<void> {
           if (!(await LLMClient.useDefault(context.secrets))) {
             panel.postMessage({ command: "error", message: "No default API key is configured." });
           }
+          break;
+
+        case "saveRoles": {
+          // "Just me" sends empty lists; the saver is always added as an Architect.
+          try {
+            const saved = await orchestrator.saveRoles(
+              parseEmailList(String(message.architects ?? "")),
+              parseEmailList(String(message.developers ?? ""))
+            );
+            panel.postMessage({ command: "rolesSaved", roles: saved });
+          } catch (err) {
+            panel.postMessage({ command: "rolesError", message: err instanceof Error ? err.message : String(err) });
+          }
+          break;
+        }
+
+        case "refreshRoles":
+          panel.postMessage({ command: "rolesInfo", roles: await orchestrator.roles() });
           break;
 
         case "generate": {
@@ -551,6 +613,7 @@ async function renderArchViewer(): Promise<void> {
     command: "render",
     recentLimit: RECENT_CHANGES,
     historyCount: history.length,
+    isArchitect: currentRoles?.role !== "developer",
     sections: sections.map((s) => ({
       heading:   s.heading,
       html:      markdown.render(s.markdown),
@@ -653,7 +716,10 @@ async function resolveTargetAdr(arg: unknown): Promise<ADR | undefined> {
   return pickAdr(pending, "Choose a pending decision");
 }
 
+// The menus already hide these from Developers; the check here covers keybindings and stale menus,
+// and runs before asking for a note so nobody types one for nothing.
 async function handleApprove(arg: unknown): Promise<void> {
+  await orchestrator.requireApprover();
   const adr = await resolveTargetAdr(arg);
   if (!adr) { return; }
   const note = await vscode.window.showInputBox({ prompt: `Approve ADR-${adr.id}: ${adr.title}`, placeHolder: "Optional note for the proposer" });
@@ -663,6 +729,7 @@ async function handleApprove(arg: unknown): Promise<void> {
 }
 
 async function handleReject(arg: unknown): Promise<void> {
+  await orchestrator.requireApprover();
   const adr = await resolveTargetAdr(arg);
   if (!adr) { return; }
   const note = await vscode.window.showInputBox({
@@ -699,11 +766,34 @@ async function handleConfigureRoles(): Promise<void> {
     vscode.window.showWarningMessage("BluePrint: No workspace folder open.");
     return;
   }
-  const uri = await access.ensureManifest();
-  await vscode.window.showTextDocument(uri);
-  vscode.window.showInformationMessage(
-    "BluePrint: List Architect emails under \"architects\". Commit this file so the whole team shares it."
-  );
+  const existing = BlueprintPanel.get("roles");
+  const panel = BlueprintPanel.show("roles", extensionUri);
+  if (existing) { panel.postMessage({ command: "render", roles: await orchestrator.roles() }); return; }
+
+  panel.setMessageHandler(async (msg) => {
+    switch (msg.command) {
+      case "ready":
+      case "refresh":
+        panel.postMessage({ command: "render", roles: await orchestrator.roles() });
+        break;
+      case "save":
+        try {
+          const roles = await orchestrator.saveRoles(
+            parseEmailList(String(msg.architects ?? "")),
+            parseEmailList(String(msg.developers ?? ""))
+          );
+          panel.postMessage({ command: "saved", roles });
+        } catch (err) {
+          panel.postMessage({ command: "error", message: err instanceof Error ? err.message : String(err) });
+        }
+        break;
+      case "openJson":
+        // Hand-editing stays possible (and is the only way to hand the Architect role over entirely).
+        await vscode.window.showTextDocument(await access.ensureManifest());
+        break;
+    }
+  });
+  await panel.loadMedia("rolesPanel.html", { nonce: panel.nonce });
 }
 
 async function handleRevertArch(): Promise<void> {

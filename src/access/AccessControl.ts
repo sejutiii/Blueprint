@@ -42,16 +42,35 @@ export class AccessControl {
     return { identity, role: roleFor(identity, manifest) };
   }
 
-  /** Write a starter manifest (the current user as the only Architect) if none exists. */
+  /** Who is acting, and the manifest their role came from (null when roles.json is missing or unreadable). */
+  async resolveRoles(): Promise<Actor & { manifest: RolesManifest | null }> {
+    const [identity, manifest] = await Promise.all([this.resolveIdentity(), this.readManifest()]);
+    return { identity, role: roleFor(identity, manifest), manifest };
+  }
+
+  manifestUri(): vscode.Uri {
+    return vscode.Uri.joinPath(this.root, ...ROLES_MANIFEST_PATH);
+  }
+
+  async writeManifest(manifest: RolesManifest): Promise<vscode.Uri> {
+    const uri = this.manifestUri();
+    await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(this.root, ".blueprint"));
+    await vscode.workspace.fs.writeFile(uri, Buffer.from(JSON.stringify(manifest, null, 2) + "\n", "utf-8"));
+    return uri;
+  }
+
+  /**
+   * Write a starter manifest (the current user as the only Architect) if none exists. Without a
+   * git identity it lists no Architects, which keeps everyone an Architect rather than locking
+   * everyone out behind a placeholder email.
+   */
   async ensureManifest(): Promise<vscode.Uri> {
-    const uri = vscode.Uri.joinPath(this.root, ...ROLES_MANIFEST_PATH);
+    const uri = this.manifestUri();
     try {
       await vscode.workspace.fs.stat(uri);
     } catch {
-      const identity = (await this.resolveIdentity()) ?? "architect@example.com";
-      const manifest: RolesManifest = { architects: [identity], developers: [] };
-      await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(this.root, ".blueprint"));
-      await vscode.workspace.fs.writeFile(uri, Buffer.from(JSON.stringify(manifest, null, 2), "utf-8"));
+      const identity = await this.resolveIdentity();
+      await this.writeManifest({ architects: identity ? [identity] : [], developers: [] });
     }
     return uri;
   }

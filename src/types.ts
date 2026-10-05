@@ -77,7 +77,8 @@ export type AuditEventType =
   | "adr_rejected"
   | "adr_created"
   | "arch_updated"
-  | "arch_reverted";
+  | "arch_reverted"
+  | "roles_updated";
 
 export interface AuditEntry {
   id: string;
