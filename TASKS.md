@@ -5,11 +5,12 @@
 **State.** All work is committed on branch `complete-srs` (`main` is untouched); the only untracked files are the `test/` fixture projects. `npm test` (104 tests) and `npm run typecheck` pass; `npm run build` and `npm run package` work. Phases 1–4 are done except the items below.
 
 **Next steps, in order**
-1. **Run the manual checklist** in [docs/TESTING.md](docs/TESTING.md) in the Extension Development Host (F5) against the projects in `test/`. *Nothing has been run inside VS Code yet* — expect a few UI fixes. Fix whatever it finds first.
-2. **Small items:** B15 (ESLint config), P3 (gitignore `test/`), E6 (settings — present a plan first).
-3. **E5** non-git diff fallback — present a plan first.
-4. **P1** README / LICENSE / `repository` / icon — **open question: which license?** (MIT suggested). Then drop the `--allow-missing-repository --skip-license` flags in `scripts/package.js` (marked TODO).
-5. **P2** update the SRS where behaviour deliberately changed (D1–D8 below; T34 and T49 in particular) and write the project's own ARCH.md.
+1. **UI fixes** — see "Phase 3b — UI review" below. U1–U6 are plain fixes; U7–U10 have a recommendation that still needs the developer's OK. Done first so the manual checklist tests the updated UI.
+2. **Run the manual checklist** in [docs/TESTING.md](docs/TESTING.md) in the Extension Development Host (F5) against the projects in `test/`. *Nothing has been run inside VS Code yet* — expect a few more UI fixes. Fix whatever it finds.
+3. **Small items:** B15 (ESLint config), P3 (gitignore `test/`), E6 (settings — present a plan first).
+4. **E5** non-git diff fallback — present a plan first.
+5. **P1** README / LICENSE / `repository` / icon — **open question: which license?** (MIT suggested). Then drop the `--allow-missing-repository --skip-license` flags in `scripts/package.js` (marked TODO).
+6. **P2** update the SRS where behaviour deliberately changed (D1–D8 below; T34 and T49 in particular) and write the project's own ARCH.md.
 
 **Known unverified / caveats**
 - Linux and macOS VSIXs build but were never run; only Windows x64 embeddings were verified (from the unpacked VSIX).
@@ -72,6 +73,22 @@ Legend: `[ ]` todo · `[x]` done · **SRS** = section/test-case it satisfies.
 - [x] **E4 ADR Browser search** *(SRS 3.1)*: search/filter command + status grouping that includes pending/rejected.
 - [ ] **E5 Non-git diff fallback** *(future_extensions #4)*: file-manifest snapshot on init; diff against it when the workspace isn't a git repo.
 - [ ] **E6 Settings**: `contributes.configuration` for provider/model override, top-K, auto-review on new file, light/heavy tier model (the `tier` placeholder in future_extensions #1).
+
+## Phase 3b — UI review (2026-10-06, from reading the code; not yet run in VS Code)
+
+**Bugs and stale text** — straightforward fixes.
+- [ ] **U1** Hub "Before you run" box says new files must be `git add`-ed first. Wrong since untracked files are included in the diff. *`media/blueprintHub.html`*
+- [ ] **U2** Compliance "No uncommitted changes" screen points to a "Review this change architecturally" button that doesn't exist. *`media/compliancePanel.html`*
+- [ ] **U3** ADR filter banner says to run "Search ADRs" to change the filter; the command is "Filter ADR Browser". No one-click way to clear an active filter (add a "Clear filter" view-title button shown only while filtering). *`src/ui/AdrTreeProvider.ts`*
+- [ ] **U4** Compliance "Re-run review" always runs mode `full`, even when the panel was opened as violations-only or extensions-only. Re-run should keep the original mode. *`src/extension.ts` `setCompliancePanelHandler`*
+- [ ] **U5** Clicking "Violation" in the status bar runs a whole new review (LLM calls). It should reveal the open Compliance panel, and only re-run if that panel was closed. *`src/ui/StatusBarManager.ts`*
+- [ ] **U6** The editor-title Hub button shows on every tab in every workspace, even ones not using BluePrint; Hub cards error before init. Gate the button on `blueprint.initialized` and make the Hub init-aware (see U7). *`package.json` menus*
+
+**Design changes** — recommendation proposed, waiting for the developer's OK.
+- [ ] **U7 Hub as a state-aware dashboard.** With D1 the separate Violations / Extensions cards are mostly redundant, and newer features (viewer, audit trail, approvals, roles) aren't reachable from the Hub. *Recommended:* main cards **Review my changes** (full), **Pre-check a prompt**, **View architecture**; secondary links Audit trail, **N pending approvals**, Configure roles, Change LLM provider; before init, a single **Initialize** card. *Alternative:* drop the Hub and put actions in the sidebar.
+- [ ] **U8 Sidebar "Audit Trail" duplicates the ADR list** (same ADRs, sorted by date; no reviews / pre-checks / ARCH.md changes). *Recommended:* show the last ~20 entries from `audit-log.json` there, with a title button to open the full trail. *Alternative:* remove the view.
+- [ ] **U9 No way to change LLM provider / API key** without re-running Initialize (which warns about regenerating ARCH.md). *Recommended:* new command "BluePrint: Change LLM Provider / API Key" — quick pick provider → password input → validate → save; linked from the Hub. Overlaps E6.
+- [ ] **U10 Search vs Filter ADRs overlap.** *Recommended:* keep both (Search jumps to one ADR, Filter narrows the list); covered by the U3 fixes.
 
 ## Phase 4 — Tests (SRS §5, T1–T53)
 
