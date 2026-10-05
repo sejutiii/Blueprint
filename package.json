@@ -221,6 +221,31 @@
           "type": "boolean",
           "default": true,
           "description": "Offer an architectural review when new files are created in the workspace."
+        },
+        "blueprint.model.gemini": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Model to use with Google Gemini. Leave empty for the built-in default (`gemini-flash-latest`). Set this if the default is retired or you want a different model."
+        },
+        "blueprint.model.groq": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Model to use with Groq. Leave empty for the built-in default (`llama-3.3-70b-versatile`). Set this if the default is retired or you want a different model."
+        },
+        "blueprint.model.openrouter": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Model to use with OpenRouter. Leave empty for the built-in default (`openrouter/free`). Set this if the default is retired or you want a different model."
+        },
+        "blueprint.model.anthropic": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Model to use with Anthropic. Leave empty for the built-in default (`claude-sonnet-4-6`). Set this if the default is retired or you want a different model."
+        },
+        "blueprint.model.openai": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Model to use with OpenAI. Leave empty for the built-in default (`gpt-4o-mini`). Set this if the default is retired or you want a different model."
         }
       }
     }

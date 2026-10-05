@@ -17,7 +17,7 @@ npm run typecheck   # extension + test sources
 | T4 | Status bar state transitions | Manual | Idle click now opens the Hub; Violation rebinds to Review |
 | T5 | Save/retrieve provider credentials | Auto | `llm.test.ts` |
 | T6 | No provider blocks a workflow | Auto + Manual | `fromSecrets` → null in `llm.test.ts`; error message in UI is manual |
-| T7 | Gemini routing | Auto | `llm.test.ts` — key now sent in `x-goog-api-key`, not the URL |
+| T7 | Gemini routing | Auto | `llm.test.ts` — key now sent in `x-goog-api-key`, not the URL; model is now `gemini-flash-latest` (the SRS's `gemini-2.0-flash` was shut down by Google) |
 | T8 | Anthropic routing | Auto | `llm.test.ts` |
 | T9 | OpenAI-compatible routing | Auto | `llm.test.ts` (OpenAI, Groq, OpenRouter) |
 | T10 | Non-OK response → actionable error | Auto | `llm.test.ts`, plus 429/5xx retry and wizard key validation |

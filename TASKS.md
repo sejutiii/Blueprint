@@ -16,6 +16,7 @@
 - Linux and macOS VSIXs build but were never run; only Windows x64 embeddings were verified (from the unpacked VSIX).
 - "Regenerate ARCH.md from codebase" has not been tried against a real LLM.
 - Rotate the dev API key in `.env` if any build or VSIX from before 2026-10-05 was shared.
+- The current dev Gemini key (2026-10-06) is valid but its Google Cloud project gets 403 "Your project has been denied access" on every model, so no live LLM run has been done with `gemini-flash-latest` yet. Needs a key from another project (or a Groq key) before the manual checklist.
 - Minor: a one-line Python `def f(): pass` keeps `pass` in its signature; an ADR slug cut at 50 chars can end in `-`. Both harmless; changing the slug would orphan existing ADR files.
 
 **Working agreement.** Before each feature: explain the current behaviour and the planned changes, wait for approval, then build → test → commit on `complete-srs`, and record decisions in the Decisions list below.
@@ -73,7 +74,8 @@ Legend: `[ ]` todo · `[x]` done · **SRS** = section/test-case it satisfies.
 - [x] **E3 ARCH.md Viewer** *(SRS 3.1)*: rendered ARCH.md webview; sections touched by the last 5 recorded changes are highlighted with when/why; Edit source / Revert / Regenerate; live refresh.
 - [x] **E4 ADR Browser search** *(SRS 3.1)*: search/filter command + status grouping that includes pending/rejected.
 - [ ] **E5 Non-git diff fallback** *(future_extensions #4)*: file-manifest snapshot on init; diff against it when the workspace isn't a git repo.
-- [ ] **E6 Settings**: `contributes.configuration` for provider/model override, top-K, auto-review on new file, light/heavy tier model (the `tier` placeholder in future_extensions #1).
+- [ ] **E6 Settings**: `contributes.configuration` for provider/model override, top-K, auto-review on new file, light/heavy tier model (the `tier` placeholder in future_extensions #1). *Done so far:* auto-review on new file; per-provider model override `blueprint.model.<provider>` (2026-10-06). *Left:* top-K, light/heavy tier.
+- [x] **M1 Retired default models** (2026-10-06): Google shut down `gemini-2.0-flash` (and `gemini-2.5-*` for new users); OpenRouter's `google/gemini-2.0-flash-exp:free` is gone. Defaults are now the aliases `gemini-flash-latest` and `openrouter/free`; a 404 names the `blueprint.model.<provider>` setting. Groq/Anthropic/OpenAI defaults not verified (no keys). The wizard now tells a blocked project ("denied access") apart from a bad key.
 
 ## Phase 3b — UI review (2026-10-06, from reading the code; not yet run in VS Code)
 

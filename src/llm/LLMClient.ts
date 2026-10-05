@@ -21,10 +21,13 @@ export const PROVIDER_KEY_PAGES: Record<Provider, { url: string; free: boolean }
   openai:     { url: "https://platform.openai.com/api-keys", free: false },
 };
 
-const DEFAULT_MODELS: Record<Provider, string> = {
-  gemini: "gemini-2.0-flash",
+// Where the provider offers one, an alias that tracks its current model, so a model retirement
+// can't break every install (gemini-2.0-flash was shut down under us). Any of these can be
+// overridden per provider with the `blueprint.model.<provider>` setting.
+export const DEFAULT_MODELS: Record<Provider, string> = {
+  gemini: "gemini-flash-latest",
   groq: "llama-3.3-70b-versatile",
-  openrouter: "google/gemini-2.0-flash-exp:free",
+  openrouter: "openrouter/free", // routes to whichever free models OpenRouter currently offers
   anthropic: "claude-sonnet-4-6",
   openai: "gpt-4o-mini",
 };
@@ -37,8 +40,14 @@ export class LLMClient {
   constructor(
     private readonly provider: Provider,
     private readonly apiKey: string,
-    private readonly model: string = DEFAULT_MODELS[provider]
+    private readonly model: string = LLMClient.modelFor(provider)
   ) {}
+
+  /** The `blueprint.model.<provider>` setting if set, otherwise the built-in default. */
+  static modelFor(provider: Provider): string {
+    const configured = vscode.workspace.getConfiguration("blueprint").get<string>(`model.${provider}`, "");
+    return configured?.trim() || DEFAULT_MODELS[provider];
+  }
 
   async complete(systemPrompt: string, userMessage: string): Promise<string> {
     switch (this.provider) {
@@ -87,7 +96,12 @@ export class LLMClient {
   }
 
   private async failure(res: Response): Promise<Error> {
-    return new Error(`${PROVIDER_LABELS[this.provider]} API error ${res.status}: ${await res.text()}`);
+    const label = PROVIDER_LABELS[this.provider];
+    // A 404 almost always means the model was retired or renamed: say which setting fixes it.
+    const hint = res.status === 404
+      ? ` The model "${this.model}" may have been retired. Choose another in Settings → BluePrint (blueprint.model.${this.provider}).`
+      : "";
+    return new Error(`${label} API error ${res.status}: ${await res.text()}${hint}`);
   }
 
   private async callOpenAICompatible(system: string, user: string): Promise<string> {
@@ -166,6 +180,13 @@ export class LLMClient {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const label   = PROVIDER_LABELS[this.provider];
+      // A 403 can also mean the key is fine but the account/project behind it is blocked;
+      // telling the user to re-copy the key would send them the wrong way.
+      if (/denied access|project has been (suspended|disabled)/i.test(message)) {
+        return `${label} recognised this key but refused access to its account or project ` +
+          `(it said: "${LLMClient.providerMessage(message)}"). Check the project in ${label}'s console, ` +
+          `or create a key in a different project.`;
+      }
       if (/\b(401|403)\b/.test(message) || /API key not valid|invalid.*key|unauthori[sz]ed/i.test(message)) {
         return `${label} rejected this API key. Check that you copied the whole key and that it belongs to ${label}.`;
       }
@@ -173,10 +194,22 @@ export class LLMClient {
         return `${label} accepted the key but is rate-limiting it right now (HTTP 429). Wait a minute and try again.`;
       }
       if (/\b404\b/.test(message)) {
-        return `${label} could not find the model "${this.model}" for this key (HTTP 404). The key may not have access to it.`;
+        return `${label} could not find the model "${this.model}" (HTTP 404). It may have been retired, or this key has no access to it. ` +
+          `Choose another model in Settings → BluePrint (blueprint.model.${this.provider}), then try again.`;
       }
       return `Could not reach ${label}: ${message}`;
     }
+  }
+
+  /** The human-readable message inside a provider's JSON error body, if there is one. */
+  private static providerMessage(errorText: string): string {
+    const json = errorText.slice(errorText.indexOf("{"));
+    try {
+      const parsed = JSON.parse(json) as { error?: { message?: string } | string };
+      const msg = typeof parsed.error === "string" ? parsed.error : parsed.error?.message;
+      if (msg) { return msg; }
+    } catch { /* not JSON */ }
+    return errorText.slice(0, 200);
   }
 
   static async fromSecrets(secrets: vscode.SecretStorage): Promise<LLMClient | null> {

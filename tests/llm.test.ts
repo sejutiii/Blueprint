@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { LLMClient } from "../src/llm/LLMClient";
+import { LLMClient, DEFAULT_MODELS } from "../src/llm/LLMClient";
+import * as vscode from "./mocks/vscode";
 
 type Call = { url: string; init: RequestInit & { headers: Record<string, string> } };
 
@@ -25,7 +26,7 @@ describe("LLMClient routing", () => {
   it("T7: Gemini — generateContent with systemInstruction/contents; key in a header, not the URL", async () => {
     const calls = stubFetch(json({ candidates: [{ content: { parts: [{ text: "hel" }, { text: "lo" }] } }] }));
     expect(await new LLMClient("gemini", "KEY123").complete("sys", "user")).toBe("hello");
-    expect(calls[0].url).toBe("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent");
+    expect(calls[0].url).toBe("https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent");
     expect(calls[0].url).not.toContain("KEY123");
     expect(calls[0].init.headers["x-goog-api-key"]).toBe("KEY123");
     expect(JSON.parse(String(calls[0].init.body))).toEqual({
@@ -58,6 +59,23 @@ describe("LLMClient routing", () => {
     await new LLMClient("openai", "k", "gpt-4o").complete("s", "u");
     expect(JSON.parse(String(calls[0].init.body)).model).toBe("gpt-4o");
   });
+
+  it("the blueprint.model.<provider> setting replaces the built-in default; blank means default", async () => {
+    const settings: Record<string, string> = { "model.openrouter": "  some/model:free  ", "model.gemini": "   " };
+    vi.spyOn(vscode.workspace, "getConfiguration").mockReturnValue(
+      { get: (key: string, fallback: unknown) => settings[key] ?? fallback } as never
+    );
+    const calls = stubFetch(json({ choices: [{ message: { content: "ok" } }] }));
+    await new LLMClient("openrouter", "k").complete("s", "u");
+    expect(JSON.parse(String(calls[0].init.body)).model).toBe("some/model:free");
+    expect(LLMClient.modelFor("gemini")).toBe(DEFAULT_MODELS.gemini);
+    vi.restoreAllMocks();
+  });
+
+  it("defaults use provider aliases where one exists, so a model retirement doesn't break installs", () => {
+    expect(DEFAULT_MODELS.gemini).toBe("gemini-flash-latest");
+    expect(DEFAULT_MODELS.openrouter).toBe("openrouter/free");
+  });
 });
 
 describe("LLMClient errors and retries", () => {
@@ -83,6 +101,12 @@ describe("LLMClient errors and retries", () => {
     expect(calls).toHaveLength(3);
   });
 
+  it("a 404 during normal use names the setting that picks another model", async () => {
+    stubFetch(new Response("This model is no longer available.", { status: 404 }));
+    await expect(new LLMClient("gemini", "k").complete("s", "u"))
+      .rejects.toThrow(/404: This model is no longer available\. The model "gemini-flash-latest" may have been retired.*blueprint\.model\.gemini/);
+  });
+
   it("an empty or blocked Gemini response is an error, not a crash", async () => {
     stubFetch(json({ candidates: [], promptFeedback: { blockReason: "SAFETY" } }));
     await expect(new LLMClient("gemini", "k").complete("s", "u")).rejects.toThrow(/empty response \(blocked: SAFETY\)/);
@@ -93,7 +117,11 @@ describe("LLMClient.validate (setup wizard key check)", () => {
   it.each([
     [new Response("unauthorized", { status: 401 }), /rejected this API key/],
     [new Response("API key not valid. Please pass a valid API key.", { status: 400 }), /rejected this API key/],
-    [new Response("model not found", { status: 404 }), /could not find the model/],
+    [new Response("model not found", { status: 404 }), /could not find the model.*blueprint\.model\.gemini/],
+    [
+      new Response(JSON.stringify({ error: { code: 403, message: "Your project has been denied access. Please contact support.", status: "PERMISSION_DENIED" } }), { status: 403 }),
+      /^Google Gemini recognised this key but refused access to its account or project \(it said: "Your project has been denied access\. Please contact support\."\)/,
+    ],
   ])("maps failures to actionable messages (%#)", async (response, expected) => {
     stubFetch(response);
     expect(await new LLMClient("gemini", "k").validate()).toMatch(expected);
