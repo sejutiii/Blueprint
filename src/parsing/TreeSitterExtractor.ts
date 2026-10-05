@@ -94,6 +94,13 @@ async function getLanguage(Parser: TSParser, name: string): Promise<unknown | nu
 
 const oneLine = (text: string): string => text.replace(/\s+/g, " ").trim().slice(0, 120);
 
+// The module an import comes from is the architectural signal, so a long `{ A, B, C, … }`
+// list is collapsed rather than letting truncation cut off the `from "module"` part.
+function importLine(text: string): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > 120 ? oneLine(flat.replace(/\{[^}]*\}/, "{…}")) : flat;
+}
+
 // Declaration header: up to the body opener, so "class Foo extends Bar {" → "class Foo extends Bar".
 function header(text: string): string {
   const first = text.split(/\r?\n/)[0];
@@ -108,7 +115,8 @@ function header(text: string): string {
 export async function extractSignals(
   file: string,
   source: string,
-  addedLines: Set<number> | null
+  addedLines: Set<number> | null,
+  options: { topLevelOnly?: boolean } = {}
 ): Promise<ExtractedSignals | null> {
   const langName = languageForFile(file);
   if (!langName) { return null; }
@@ -131,21 +139,27 @@ export async function extractSignals(
   const visit = (node: any, depth: number): void => {
     if (depth > 12) { return; }
     if (types.imports.includes(node.type)) {
-      if (isAdded(node.startPosition.row)) { imports.push(oneLine(node.text)); }
+      if (isAdded(node.startPosition.row)) { imports.push(importLine(node.text)); }
       return;
     }
     if (isRequireCall(langName, node) && isAdded(node.startPosition.row)) {
       // `const x = require("y")`: report the whole declaration, not just the call.
       imports.push(oneLine(node.parent?.type === "variable_declarator" ? node.parent.parent.text : node.text));
     }
-    if (types.decls.includes(node.type) && isAdded(node.startPosition.row)) {
+    const isDecl = types.decls.includes(node.type);
+    if (isDecl && isAdded(node.startPosition.row)) {
       // Keep the "export" keyword when the declaration is wrapped in an export statement.
       const target = node.parent?.type === "export_statement" ? node.parent : node;
-      signatures.push(header(target.text));
+      const text = header(target.text);
+      // `type X = A | B | C` — the name is the signal; the union is noise.
+      signatures.push(node.type === "type_alias_declaration" ? text.replace(/\s*=.*$/, "") : text);
     } else if (isArrowConst(langName, node) && isAdded(node.startPosition.row)) {
       const target = node.parent?.type === "export_statement" ? node.parent : node;
       signatures.push(header(target.text).replace(/\s*=>.*$/, " =>"));
     }
+    // Top-level mode (codebase overview): don't descend into declarations, so class members
+    // and nested functions are skipped. Go's type_spec sits inside type_declaration, so allow it.
+    if (options.topLevelOnly && (isDecl || isArrowConst(langName, node))) { return; }
     for (const child of node.namedChildren) { visit(child, depth + 1); }
   };
   visit(tree.rootNode, 0);

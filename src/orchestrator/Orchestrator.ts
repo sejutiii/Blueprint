@@ -13,6 +13,8 @@ import { PreCheckAgent } from "../agents/PreCheckAgent";
 import { PreCheckResult, buildPromptWithContext } from "../prompts/preCheckPrompts";
 import { ConstraintDraft } from "../prompts/constraintPrompts";
 import { DecisionService, ProposeResult } from "../services/DecisionService";
+import { buildCodebaseSnapshot } from "../parsing/CodebaseSnapshot";
+import { renderArchMd } from "../prompts/archPrompts";
 import {
   ADR, ArchBlueprint, ComplianceResult, DiffSummary, ExtensionDetail, OrchestratorEvent, ViolationDetail,
 } from "../types";
@@ -298,6 +300,43 @@ Location: ${violation.affectedCodeLocation}` : "";
     });
     this.hooks.onDataChanged();
     return result;
+  }
+
+  // ── Living ARCH.md: regenerate from the codebase (Architect-only) ─────────
+
+  private async requireArchitect(): Promise<string | undefined> {
+    const actor = await this.workspace().access.resolveActor();
+    if (actor.role !== "architect") {
+      throw new BlueprintError(
+        "Only an Architect can regenerate ARCH.md, because it rewrites the whole document. " +
+        "Ask an Architect listed in .blueprint/roles.json to run it."
+      );
+    }
+    return actor.identity ?? undefined;
+  }
+
+  /** Builds a proposed ARCH.md from the codebase without writing anything. */
+  async proposeRegeneration(): Promise<{ blueprint: ArchBlueprint; markdown: string }> {
+    await this.requireArchitect();
+    const { fileStore, blueprint, root } = await this.requireInitialized();
+    const llm      = await this.requireLlm();
+    const snapshot = await buildCodebaseSnapshot(root);
+    const next     = await new ArchitectureAgent(llm).regenerateFromCodebase(blueprint, snapshot);
+    const name     = (await fileStore.readSystemName()) ?? undefined;
+    return { blueprint: next, markdown: renderArchMd(next, name) };
+  }
+
+  /** Writes a regenerated blueprint; the previous ARCH.md is kept in history, so it can be reverted. */
+  async applyRegeneration(blueprint: ArchBlueprint): Promise<void> {
+    const actor = await this.requireArchitect();
+    const { fileStore, audit } = this.workspace();
+    await fileStore.writeArchBlueprint(blueprint, undefined, "ARCH.md regenerated from codebase");
+    await audit?.append({
+      eventType: "arch_updated",
+      summary:   `ARCH.md regenerated from codebase (${blueprint.components.length} components, ${blueprint.constraints.length} constraints)`,
+      actor,
+    });
+    this.hooks.onDataChanged();
   }
 
   // ── Approval queue ────────────────────────────────────────────────────────

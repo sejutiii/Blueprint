@@ -30,6 +30,39 @@ export function buildArchGenerationPrompt(systemDescription: string): string {
   return `Analyze this system description and extract its architecture:\n\n${systemDescription}`;
 }
 
+export const ARCH_FROM_CODE_SYSTEM_PROMPT = `You are a software architecture analyst. You are given the project's CURRENT architecture blueprint and a snapshot of its codebase (dependency manifests, README, top-level declarations per source file, file tree). Produce an updated blueprint that describes the system as the code shows it now.
+
+Respond with ONLY valid JSON. No markdown, no code fences, no explanation — raw JSON only.
+
+The JSON must match this exact schema:
+{
+  "systemOverview": "2-3 sentence summary of what the system does and its primary purpose",
+  "components": [
+    {
+      "name": "ComponentName",
+      "responsibility": "What this component does",
+      "technology": "Technology used (omit field if not evident)"
+    }
+  ],
+  "dataFlow": "Description of how data moves through the system end-to-end",
+  "constraints": ["Each locked-in technical decision visible in the code, as a short statement"],
+  "openQuestions": ["Each unresolved architectural question, including mismatches between the blueprint and the code"]
+}
+
+Rules:
+- The current blueprint is the baseline. Keep a component's existing name when it still matches the code, so names stay stable across regenerations.
+- Add components that the code clearly contains but the blueprint lacks. A component is a module, service, layer or subsystem with its own responsibility — not a single helper file.
+- Keep a blueprint component unless the snapshot shows it clearly no longer exists. If you cannot tell, keep it and add an open question.
+- Ground every statement in the snapshot. Do not invent technologies, services or flows that the snapshot does not show.
+- constraints: technology choices evident from the code (frameworks, datastores, runtimes). Existing constraints are preserved separately, so list only what the code shows.
+- openQuestions: keep existing questions the code does not answer; add one for each important mismatch between the blueprint and the code.
+- systemOverview must be self-contained — a reader with no other context should understand the system.`;
+
+export function buildArchFromCodePrompt(current: ArchBlueprint, snapshot: string): string {
+  const { lastUpdated: _omit, ...blueprint } = current;
+  return `CURRENT BLUEPRINT:\n${JSON.stringify(blueprint, null, 2)}\n\nCODEBASE SNAPSHOT:\n${snapshot}\n\nProduce the updated blueprint.`;
+}
+
 export function renderArchMd(blueprint: ArchBlueprint, systemName = "System"): string {
   const componentRows = blueprint.components
     .map((c) => `| ${c.name} | ${c.responsibility} | ${c.technology ?? "—"} |`)

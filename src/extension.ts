@@ -16,6 +16,8 @@ import { ConstraintDraft } from "./prompts/constraintPrompts";
 import { adrFilename } from "./prompts/adrPrompts";
 import { ViolationDetail, ExtensionDetail, ADR, AuditEntry, DiffSummary } from "./types";
 import { configureGrammarDir } from "./parsing/TreeSitterExtractor";
+import { splitSections, recentHighlights, RECENT_CHANGES } from "./ui/archView";
+import MarkdownIt from "markdown-it";
 
 let statusBar: StatusBarManager;
 let adrTreeProvider: AdrTreeProvider;
@@ -24,9 +26,16 @@ let orchestrator: Orchestrator;
 
 // Last diff that was reviewed — decisions recorded in the compliance panel link back to these files.
 let lastReviewedFiles: string[] = [];
+let extensionUri: vscode.Uri;
+
+// Read-only documents for previews (e.g. a regenerated ARCH.md shown in a diff before applying).
+const PREVIEW_SCHEME = "blueprint-preview";
+const previewContents = new Map<string, string>();
+const previewChanged  = new vscode.EventEmitter<vscode.Uri>();
 
 export function activate(context: vscode.ExtensionContext): void {
   configureGrammarDir(path.join(context.extensionPath, "node_modules", "tree-sitter-wasms", "out"));
+  extensionUri = context.extensionUri;
 
   adrTreeProvider    = new AdrTreeProvider();
   auditTrailProvider = new AuditTrailTreeProvider();
@@ -73,11 +82,37 @@ export function activate(context: vscode.ExtensionContext): void {
   register("blueprint.filterAdrs",     () => handleFilterAdrs());
   register("blueprint.configureRoles", () => handleConfigureRoles());
   register("blueprint.revertArch",     () => handleRevertArch());
+  register("blueprint.regenerateArch", () => handleRegenerateArch());
+
+  context.subscriptions.push(
+    previewChanged,
+    vscode.workspace.registerTextDocumentContentProvider(PREVIEW_SCHEME, {
+      onDidChange: previewChanged.event,
+      provideTextDocumentContent: (uri) => previewContents.get(uri.path) ?? "",
+    })
+  );
 
   registerAutoReview(context);
 
   const unsubscribe = AuditLog.onAppend(() => { void pushAuditTrail(); });
   context.subscriptions.push({ dispose: unsubscribe });
+
+  // Keep the ARCH.md viewer live: re-render on edits to ARCH.md or new history entries.
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  if (folder) {
+    const watcher = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(folder, "{docs/ARCH.md,.blueprint/history/index.json}")
+    );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const rerender = () => {
+      if (timer) { clearTimeout(timer); }
+      timer = setTimeout(() => { void renderArchViewer(); }, 250);
+    };
+    watcher.onDidChange(rerender);
+    watcher.onDidCreate(rerender);
+    watcher.onDidDelete(rerender);
+    context.subscriptions.push(watcher);
+  }
 }
 
 function reportError(err: unknown): void {
@@ -444,18 +479,81 @@ async function openWorkspaceFile(relativePath: string): Promise<void> {
   }
 }
 
+// ARCH.md viewer (SRS 3.1): rendered document with recently touched sections highlighted.
+const markdown = new MarkdownIt({ html: false, linkify: true }); // raw HTML in ARCH.md is escaped
+
 async function openArchMd(): Promise<void> {
   const store = FileStore.fromWorkspace();
   if (!store) {
     vscode.window.showWarningMessage("BluePrint: No workspace folder open.");
     return;
   }
-  const uri = store.getArchMdUri();
-  try {
-    await vscode.workspace.fs.stat(uri);
-    await vscode.commands.executeCommand("markdown.showPreview", uri);
-  } catch {
+  if (!(await store.readArchMarkdown())) {
     vscode.window.showWarningMessage("BluePrint: ARCH.md not found. Run BluePrint: Initialize Project first.");
+    return;
+  }
+
+  const existing = BlueprintPanel.get("archViewer");
+  const panel = BlueprintPanel.show("archViewer", extensionUri);
+  if (existing) { await renderArchViewer(); return; }
+
+  panel.setMessageHandler(async (msg) => {
+    try {
+      switch (msg.command) {
+        case "ready":      await renderArchViewer(); break;
+        case "openSource": await vscode.window.showTextDocument(store.getArchMdUri()); break;
+        case "revert":     await handleRevertArch(); break;
+        case "regenerate": await handleRegenerateArch(); break;
+        case "openLink":   await openLink(msg.href as string); break;
+      }
+    } catch (err) {
+      reportError(err);
+    }
+  });
+  await panel.loadMedia("archViewer.html", { nonce: panel.nonce });
+}
+
+async function renderArchViewer(): Promise<void> {
+  const panel = BlueprintPanel.get("archViewer");
+  const store = FileStore.fromWorkspace();
+  if (!panel || !store) { return; }
+
+  const [md, history] = await Promise.all([store.readArchMarkdown(), store.getHistory()]);
+  if (!md) {
+    panel.postMessage({ command: "render", missing: true, sections: [], historyCount: history.length });
+    return;
+  }
+  const sections   = splitSections(md);
+  const headings   = sections.flatMap((s) => (s.heading ? [s.heading] : []));
+  const highlights = recentHighlights(history, headings);
+  panel.postMessage({
+    command: "render",
+    recentLimit: RECENT_CHANGES,
+    historyCount: history.length,
+    sections: sections.map((s) => ({
+      heading:   s.heading,
+      html:      markdown.render(s.markdown),
+      highlight: s.heading ? highlights.get(s.heading.toLowerCase()) : undefined,
+    })),
+  });
+}
+
+async function openLink(href: string): Promise<void> {
+  if (!href) { return; }
+  if (/^https?:\/\//i.test(href)) {
+    await vscode.env.openExternal(vscode.Uri.parse(href));
+    return;
+  }
+  if (href.startsWith("#")) { return; }
+  // Relative links in docs/ARCH.md resolve against docs/.
+  const folders = vscode.workspace.workspaceFolders;
+  if (!folders?.length) { return; }
+  const target = vscode.Uri.joinPath(folders[0].uri, "docs", href.split("#")[0]);
+  try {
+    await vscode.workspace.fs.stat(target);
+    await vscode.window.showTextDocument(target, { preview: true });
+  } catch {
+    vscode.window.showWarningMessage(`BluePrint: link target not found: ${href}`);
   }
 }
 
@@ -623,6 +721,38 @@ async function handleRevertArch(): Promise<void> {
     actor: (await AccessControl.fromWorkspace()?.resolveIdentity()) ?? undefined,
   });
   vscode.window.showInformationMessage("BluePrint: ARCH.md restored.");
+}
+
+// Architect-only (enforced in the orchestrator). Nothing is written until the developer has
+// seen the diff and confirmed; the previous version goes to history, so Revert can undo it.
+async function handleRegenerateArch(): Promise<void> {
+  const store = FileStore.fromWorkspace();
+  if (!store || !(await orchestrator.isInitialized())) {
+    vscode.window.showWarningMessage("BluePrint: Initialize the project first.");
+    return;
+  }
+
+  const proposal = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: "BluePrint: Analyzing the codebase to regenerate ARCH.md…" },
+    () => orchestrator.proposeRegeneration()
+  );
+
+  const previewUri = vscode.Uri.from({ scheme: PREVIEW_SCHEME, path: "/ARCH.regenerated.md" });
+  previewContents.set(previewUri.path, proposal.markdown);
+  previewChanged.fire(previewUri);
+  await vscode.commands.executeCommand("vscode.diff", store.getArchMdUri(), previewUri, "ARCH.md: current ↔ regenerated from codebase");
+
+  const choice = await vscode.window.showInformationMessage(
+    "Apply the regenerated ARCH.md? It replaces the whole document, including manual edits. " +
+    "Existing constraints are kept, and the current version is saved to history so you can revert.",
+    { modal: true },
+    "Apply"
+  );
+  if (choice !== "Apply") { return; }
+
+  await orchestrator.applyRegeneration(proposal.blueprint);
+  previewContents.delete(previewUri.path);
+  vscode.window.showInformationMessage("BluePrint: ARCH.md regenerated. Use \"Revert ARCH.md\" to undo.");
 }
 
 export function deactivate(): void {

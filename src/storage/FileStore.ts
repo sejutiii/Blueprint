@@ -77,7 +77,7 @@ export class FileStore {
     return this.readText(this.uri("docs", "ARCH.md"));
   }
 
-  private async readSystemName(): Promise<string | null> {
+  async readSystemName(): Promise<string | null> {
     const md = await this.readArchMarkdown();
     const m  = md?.match(/^#\s+Architecture:\s*(.+)$/m);
     return m ? m[1].trim() : null;
