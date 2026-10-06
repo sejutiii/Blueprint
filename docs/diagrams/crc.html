@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>BluePrint — CRC Cards</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", Arial, sans-serif;
+    background: #f4f1ea;
+    color: #1f2328;
+    padding: 36px 40px 40px;
+    width: 2640px;
+  }
+  header { margin-bottom: 22px; display: flex; align-items: baseline; gap: 18px; }
+  h1 { font-size: 30px; font-weight: 700; letter-spacing: 0.2px; }
+  .sub { font-size: 15px; color: #5b6168; }
+
+  .layer {
+    display: grid;
+    grid-template-columns: 150px 1fr;
+    gap: 14px;
+    margin-bottom: 18px;
+    padding: 16px;
+    border-radius: 10px;
+  }
+  .layer-label {
+    font-size: 13px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+    writing-mode: vertical-rl; transform: rotate(180deg);
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 6px; color: #fff;
+  }
+  .cards { display: flex; flex-wrap: wrap; gap: 14px; align-items: stretch; }
+
+  .ui    { background: #e7eef8; } .ui    .layer-label { background: #3d6fb6; } .ui    .card-head { background: #3d6fb6; }
+  .core  { background: #f6e8e3; } .core  .layer-label { background: #b5532f; } .core  .card-head { background: #b5532f; }
+  .agent { background: #e8f3e8; } .agent .layer-label { background: #3e8a4a; } .agent .card-head { background: #3e8a4a; }
+  .infra { background: #efeaf5; } .infra .layer-label { background: #6c4f9c; } .infra .card-head { background: #6c4f9c; }
+
+  .card {
+    width: 278px;
+    background: #fffef9;
+    border: 1px solid #c9c3b6;
+    border-radius: 6px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .card.wide { width: 470px; }
+  .card-head {
+    color: #fff; padding: 8px 12px;
+    font-size: 16px; font-weight: 700;
+    display: flex; justify-content: space-between; align-items: baseline;
+  }
+  .stereo { font-size: 11px; font-weight: 400; opacity: 0.85; font-style: italic; }
+  .card-body {
+    display: grid; grid-template-columns: 1fr 118px;
+    flex: 1;
+    background-image: repeating-linear-gradient(#fffef9 0 21px, #e6eef7 21px 22px);
+  }
+  .card.wide .card-body { grid-template-columns: 1fr 150px; }
+  .col { padding: 6px 9px 10px; font-size: 12.5px; line-height: 1.45; }
+  .collab li { overflow-wrap: anywhere; }
+  .col + .col { border-left: 2px solid #d9534f33; }
+  .col h4 {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase;
+    color: #7a7f86; margin-bottom: 4px;
+  }
+  .col ul { list-style: none; }
+  .col li { margin-bottom: 3px; padding-left: 10px; position: relative; }
+  .col li::before { content: "•"; position: absolute; left: 0; color: #9aa0a6; }
+  .collab li { font-weight: 600; color: #2b4a75; }
+  .collab li::before { content: "→"; color: #8aa0bf; }
+  .none { color: #9aa0a6; font-style: italic; }
+
+  footer { font-size: 13px; color: #5b6168; margin-top: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>BluePrint — CRC Cards</h1>
+  <span class="sub">Class · Responsibilities · Collaborators &nbsp;|&nbsp; VS Code extension for architecture-aware development</span>
+</header>
+
+<!-- ─────────────── UI LAYER ─────────────── -->
+<section class="layer ui">
+  <div class="layer-label">UI layer</div>
+  <div class="cards">
+
+    <div class="card wide">
+      <div class="card-head">Extension <span class="stereo">«module» extension.ts</span></div>
+      <div class="card-body">
+        <div class="col"><h4>Responsibilities</h4><ul>
+          <li>Register commands, sidebar views and the status bar</li>
+          <li>Open webview panels and relay their messages to the Orchestrator</li>
+          <li>Set up the LLM provider and validate API keys in the setup wizard</li>
+          <li>Offer a review when new files are created</li>
+          <li>Watch ARCH.md, the ADR index and roles.json, and refresh the UI</li>
+        </ul></div>
+        <div class="col collab"><h4>Collaborators</h4><ul>
+          <li>Orchestrator</li><li>BlueprintPanel</li><li>StatusBarManager</li>
+          <li>AdrTreeProvider</li><li>AuditTrailTreeProvider</li><li>LLMClient</li>
+          <li>AccessControl</li><li>AdrStore</li><li>FileStore</li><li>AuditLog</li>
+        </ul></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">BlueprintPanel</div>
+      <div class="card-body">
+        <div class="col"><h4>Responsibilities</h4><ul>
+          <li>Keep one webview panel per type (Setup, Review, Pre-Check, Add Decision, Viewer…)</li>
+          <li>Load panel HTML with a CSP nonce</li>
+          <li>Pass messages between webview and host</li>
+        </ul></div>
+        <div class="col collab"><h4>Collaborators</h4><ul><li>Extension</li></ul></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">StatusBarManager</div>
+      <div class="card-body">
+        <div class="col"><h4>Responsibilities</h4><ul>
+          <li>Show state: not initialized, idle, checking, OK, violation</li>
+          <li>Show pending-approval count and your role</li>
+          <li>Bind the click to the right command</li>
+        </ul></div>
+        <div class="col collab"><h4>Collaborators</h4><ul><li>Extension</li><li>Orchestrator</li></ul></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">AdrTreeProvider</div>
+      <div class="card-body">
+        <div class="col"><h4>Responsibilities</h4><ul>
+          <li>List ADRs grouped by status, pending first</li>
+          <li>Filter ADRs by text</li>
+          <li>Show Approve / Reject to Architects</li>
+          <li>Mark superseded ADRs</li>
+        </ul></div>
+        <div class="col collab"><h4>Collaborators</h4><ul><li>Extension</li></ul></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">AuditTrailTreeProvider</div>
+      <div class="card-body">
+        <div class="col"><h4>Responsibilities</h4><ul>
+          <li>List recorded decisions in the sidebar, newest first</li>
+          <li>Open an ADR when clicked</li>
+        </ul></div>
+        <div class="col collab"><h4>Collaborators</h4><ul><li>Extension</li><li>AdrTreeProvider</li></ul></div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ─────────────── COORDINATION ─────────────── -->
+<section class="layer core">
+  <div class="layer-label">Coordination</div>
+  <div class="cards">
+
+    <div class="card wide">
+      <div class="card-head">Orchestrator</div>
+      <div class="card-body">
+        <div class="col"><h4>Responsibilities</h4><ul>
+          <li>Route events (project init, prompt submitted, code changed, manual review) to agent pipelines</li>
+          <li>Run compliance Pass 1 and Pass 2 in parallel</li>
+          <li>Resolve violations, confirm extensions, draft and save decisions</li>
+          <li>Generate and regenerate ARCH.md</li>
+          <li>Enforce Architect-only actions; read and save roles</li>
+          <li>Report workflow state to the UI</li>
+        </ul></div>
+        <div class="col collab"><h4>Collaborators</h4><ul>
+          <li>ArchitectureAgent</li><li>ConstraintElicitationAgent</li><li>ComplianceAgent</li>
+          <li>PreCheckAgent</li><li>RetrievalAgent</li><li>DiffSummarizer</li>
+          <li>DecisionService</li><li>CodebaseSnapshot</li><li>LLMClient</li>
+          <li>FileStore</li><li>AdrStore</li><li>AuditLog</li><li>AccessControl</li>
+        </ul></div>
+      </div>
+    </div>
+
+    <div class="card wide">
+      <div class="card-head">DecisionService</div>
+      <div class="card-body">
+        <div class="col"><h4>Responsibilities</h4><ul>
+          <li>Single entry point for every new ADR</li>
+          <li>Accept an Architect's decision immediately; queue a Developer's for approval</li>
+          <li>Approve or reject pending ADRs (rejection needs a reason)</li>
+          <li>On acceptance: patch ARCH.md, retire the ADR it supersedes, cache its embedding, write the audit trail</li>
+        </ul></div>
+        <div class="col collab"><h4>Collaborators</h4><ul>
+          <li>AdrStore</li><li>FileStore</li><li>AuditLog</li><li>AccessControl</li><li>RetrievalAgent</li>
+        </ul></div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ─────────────── AGENTS ─────────────── -->
+<section class="layer agent">
+  <div class="layer-label">Agents</div>
+  <div class="cards">
+
+    <div class="card">
+      <div class="card-head">ArchitectureAgent</div>
+      <div class="card-body">
+        <div class="col"><h4>Responsibilities</h4><ul>
+          <li>Generate the architecture blueprint from a system description</li>
+          <li>Regenerate it from a codebase snapshot, keeping every constraint</li>
+          <li>Validate the LLM's JSON</li>
+        </ul></div>
+        <div class="col collab"><h4>Collaborators</h4><ul><li>LLMClient</li></ul></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">ConstraintElicitationAgent</div>
+      <div class="card-body">
+        <div class="col"><h4>Responsibilities</h4><ul>
+          <li>Turn a wizard answer into a draft ADR and one follow-up question</li>
+          <li>Draft an ADR from a free-text decision</li>
+          <li>Suggest which ADR it supersedes; flag tentative input</li>
+        </ul></div>
+        <div class="col collab"><h4>Collaborators</h4><ul><li>LLMClient</li><li>ElicitationSession</li></ul></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">ElicitationSession</div>
+      <div class="card-body">
+        <div class="col"><h4>Responsibilities</h4><ul>
+          <li>Track the wizard's five topics and their follow-ups (one level deep)</li>
+          <li>Record answers; advance or skip</li>
+        </ul></div>
+        <div class="col collab"><h4>Collaborators</h4><ul><li class="none">none</li></ul></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">ComplianceAgent</div>
+      <div class="card-body">
+        <div class="col"><h4>Responsibilities</h4><ul>
+          <li>Pass 1: find violations of constraints and ADRs in a change</li>
+          <li>Pass 2: find new components missing from ARCH.md (max 5)</li>
+          <li>Fall back to safe defaults on unparseable output</li>
+        </ul></div>
+        <div class="col collab"><h4>Collaborators</h4><ul><li>LLMClient</li></ul></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">PreCheckAgent</div>
+      <div class="card-body">
+        <div class="col"><h4>Responsibilities</h4><ul>
+          <li>Check a coding prompt's intent against constraints and ADRs before code exists</li>
+          <li>Suggest a revised prompt when it conflicts</li>
+        </ul></div>
+        <div class="col collab"><h4>Collaborators</h4><ul><li>LLMClient</li></ul></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">RetrievalAgent</div>
+      <div class="card-body">
+        <div class="col"><h4>Responsibilities</h4><ul>
+          <li>Rank accepted ADRs by relevance (TF-IDF + local embeddings, component boost)</li>
+          <li>Build a search query from a diff summary</li>
+          <li>Cache ADR embeddings</li>
+        </ul></div>
+        <div class="col collab"><h4>Collaborators</h4><ul><li>EmbeddingService</li><li>AdrStore</li></ul></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">DiffSummarizer</div>
+      <div class="card-body">
+        <div class="col"><h4>Responsibilities</h4><ul>
+          <li>Collect uncommitted changes (git diff HEAD + untracked files)</li>
+          <li>Skip lockfiles and BluePrint's own files</li>
+          <li>Classify files added / modified / renamed / deleted; find added and removed dependencies</li>
+          <li>Extract new imports and declarations; build a diff excerpt</li>
+        </ul></div>
+        <div class="col collab"><h4>Collaborators</h4><ul><li>TreeSitterExtractor</li></ul></div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ─────────────── INFRASTRUCTURE ─────────────── -->
+<section class="layer infra">
+  <div class="layer-label">Infrastructure</div>
+  <div class="cards">
+
+    <div class="card">
+      <div class="card-head">LLMClient</div>
+      <div class="card-body">
+        <div class="col"><h4>Responsibilities</h4><ul>
+          <li>Send prompts to Gemini, Groq, OpenRouter, Anthropic or OpenAI</li>
+          <li>Time out and retry on rate limits / server errors</li>
+          <li>Validate and securely store the API key</li>
+          <li>Pick the model (setting or default)</li>
+        </ul></div>
+        <div class="col collab"><h4>Collaborators</h4><ul><li class="none">external LLM APIs</li></ul></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">EmbeddingService</div>
+      <div class="card-body">
+        <div class="col"><h4>Responsibilities</h4><ul>
+          <li>Compute sentence embeddings locally (MiniLM)</li>
+          <li>Download the model on first use</li>
+          <li>Report failure so retrieval falls back to TF-IDF</li>
+        </ul></div>
+        <div class="col collab"><h4>Collaborators</h4><ul><li class="none">none</li></ul></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">TreeSitterExtractor <span class="stereo">«module»</span></div>
+      <div class="card-body">
+        <div class="col"><h4>Responsibilities</h4><ul>
+          <li>Parse source files with Tree-sitter (8 languages)</li>
+          <li>Extract added imports and declaration headers</li>
+          <li>Top-level-only mode for project overviews</li>
+        </ul></div>
+        <div class="col collab"><h4>Collaborators</h4><ul><li class="none">none</li></ul></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">CodebaseSnapshot <span class="stereo">«module»</span></div>
+      <div class="card-body">
+        <div class="col"><h4>Responsibilities</h4><ul>
+          <li>Build a compact project overview (manifests, README, top-level declarations, file tree) for regenerating ARCH.md</li>
+        </ul></div>
+        <div class="col collab"><h4>Collaborators</h4><ul><li>TreeSitterExtractor</li></ul></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">AdrStore</div>
+      <div class="card-body">
+        <div class="col"><h4>Responsibilities</h4><ul>
+          <li>Persist ADRs (adr-index.json + docs/adr/*.md)</li>
+          <li>Assign sequential IDs; serialize writes</li>
+          <li>Update ADRs, renaming files on title change</li>
+          <li>Store embeddings</li>
+        </ul></div>
+        <div class="col collab"><h4>Collaborators</h4><ul><li class="none">none</li></ul></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">FileStore</div>
+      <div class="card-body">
+        <div class="col"><h4>Responsibilities</h4><ul>
+          <li>Read and write ARCH.md and arch.json</li>
+          <li>Apply targeted patches (add component, add or replace constraint) that keep manual edits</li>
+          <li>Snapshot history; revert</li>
+        </ul></div>
+        <div class="col collab"><h4>Collaborators</h4><ul><li class="none">none</li></ul></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">AuditLog</div>
+      <div class="card-body">
+        <div class="col"><h4>Responsibilities</h4><ul>
+          <li>Append audit events (reviews, pre-checks, decisions, ARCH.md and role changes)</li>
+          <li>Notify listeners on every append</li>
+        </ul></div>
+        <div class="col collab"><h4>Collaborators</h4><ul><li class="none">none</li></ul></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">AccessControl</div>
+      <div class="card-body">
+        <div class="col"><h4>Responsibilities</h4><ul>
+          <li>Identify the user from git user.email</li>
+          <li>Read and write roles.json</li>
+          <li>Resolve Architect or Developer</li>
+        </ul></div>
+        <div class="col collab"><h4>Collaborators</h4><ul><li class="none">none</li></ul></div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<footer>Collaborators are the classes each one calls directly. «module» marks a file of functions rather than a class. Webview pages (HTML) are not shown.</footer>
+<script>
+  // Let long class names wrap at word boundaries (ConstraintElicitation​Agent).
+  document.querySelectorAll('.collab li').forEach((li) => {
+    if (li.textContent.length > 12) li.innerHTML = li.textContent.replace(/([a-z])([A-Z])/g, '$1<wbr>$2');
+  });
+</script>
+</body>
+</html>
