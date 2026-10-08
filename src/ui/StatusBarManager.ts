@@ -76,8 +76,8 @@ export class StatusBarManager {
   setViolationFound(): void {
     this.apply(
       "$(warning) BluePrint: Violation",
-      "Architectural violation detected — click to review",
-      "blueprint.reviewChange",
+      "Architectural violation detected — click to see the review",
+      "blueprint.showLastReview",
       true
     );
   }

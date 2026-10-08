@@ -2,10 +2,10 @@
 
 ## ▶ Resume here (paused 2026-10-05)
 
-**State.** All work is committed on branch `complete-srs` (`main` is untouched); the only untracked files are the `test/` fixture projects. `npm test` (104 tests) and `npm run typecheck` pass; `npm run build` and `npm run package` work. Phases 1–4 are done except the items below.
+**State.** All work is committed on branch `complete-srs` (`main` is untouched); the only untracked files are the `test/` fixture projects. `npm test` (142 tests) and `npm run typecheck` pass; `npm run build` and `npm run package` work. Phases 1–4 are done except the items below.
 
 **Next steps, in order**
-1. **UI fixes** — see "Phase 3b — UI review" below. U1–U6 are plain fixes; U7–U10 have a recommendation that still needs the developer's OK; U16 is an open question. U11–U15 (roles) are done. Done first so the manual checklist tests the updated UI.
+1. **UI fixes** — see "Phase 3b — UI review" below. U1–U6 done (2026-10-08); U17 is a small follow-up; U7–U10 have a recommendation that still needs the developer's OK; U16 is an open question. U11–U15 (roles) are done. Done first so the manual checklist tests the updated UI.
 2. **Run the manual checklist** in [docs/TESTING.md](docs/TESTING.md) in the Extension Development Host (F5) against the projects in `test/`. *Nothing has been run inside VS Code yet* — expect a few more UI fixes. Fix whatever it finds.
 3. **Small items:** B15 (ESLint config), P3 (gitignore `test/`), E6 (remaining setting: top-K — present a plan first).
 4. **E5** non-git diff fallback — present a plan first.
@@ -84,12 +84,13 @@ Legend: `[ ]` todo · `[x]` done · **SRS** = section/test-case it satisfies.
 ## Phase 3b — UI review (2026-10-06, from reading the code; not yet run in VS Code)
 
 **Bugs and stale text** — straightforward fixes.
-- [ ] **U1** Hub "Before you run" box says new files must be `git add`-ed first. Wrong since untracked files are included in the diff. *`media/blueprintHub.html`*
-- [ ] **U2** Compliance "No uncommitted changes" screen points to a "Review this change architecturally" button that doesn't exist. *`media/compliancePanel.html`*
-- [ ] **U3** ADR filter banner says to run "Search ADRs" to change the filter; the command is "Filter ADR Browser". No one-click way to clear an active filter (add a "Clear filter" view-title button shown only while filtering). *`src/ui/AdrTreeProvider.ts`*
-- [ ] **U4** Compliance "Re-run review" always runs mode `full`, even when the panel was opened as violations-only or extensions-only. Re-run should keep the original mode. *`src/extension.ts` `setCompliancePanelHandler`*
-- [ ] **U5** Clicking "Violation" in the status bar runs a whole new review (LLM calls). It should reveal the open Compliance panel, and only re-run if that panel was closed. *`src/ui/StatusBarManager.ts`*
-- [ ] **U6** The editor-title Hub button shows on every tab in every workspace, even ones not using BluePrint; Hub cards error before init. Gate the button on `blueprint.initialized` and make the Hub init-aware (see U7). *`package.json` menus*
+- [x] **U1** Hub "Before you run" box says new files must be `git add`-ed first. Wrong since untracked files are included in the diff. *(2026-10-08: text now says everything uncommitted is reviewed, .gitignore'd files skipped)*
+- [x] **U2** Compliance "No uncommitted changes" screen points to a "Review this change architecturally" button that doesn't exist. *(2026-10-08: explains it compares against the last commit and needs git; "Check again" button)*
+- [x] **U3** ADR filter banner says to run "Search ADRs" to change the filter; the command is "Filter ADR Browser". No one-click way to clear an active filter. *(2026-10-08: banner click clears; "Clear ADR Filter" title button shown only while filtering, context key `blueprint.adrFilterActive`)*
+- [x] **U4** Compliance "Re-run review" always runs mode `full`. *(2026-10-08: re-run / Try again / Check again keep the mode the panel was opened with)*
+- [x] **U5** Clicking "Violation" in the status bar runs a whole new review. *(2026-10-08: internal `blueprint.showLastReview` reveals the open panel; re-runs in the last mode only if it was closed)*
+- [x] **U6** The editor-title Hub button shows on every tab in every workspace; Hub cards error before init. *(2026-10-08: button gated on `blueprint.initialized`; before init the Hub shows only an Initialize card and switches live once ARCH.md is generated. The rest of the Hub redesign is U7.)*
+- [ ] **U17** After every violation in the Compliance panel is resolved, the status bar still says "Violation" (until the next review). Return it to idle/OK once nothing is left open.
 
 **Design changes** — recommendation proposed, waiting for the developer's OK.
 - [ ] **U7 Hub as a state-aware dashboard.** With D1 the separate Violations / Extensions cards are mostly redundant, and newer features (viewer, audit trail, approvals, roles) aren't reachable from the Hub. *Recommended:* main cards **Review my changes** (full), **Pre-check a prompt**, **View architecture**; secondary links Audit trail, **N pending approvals**, Configure roles, Change LLM provider; before init, a single **Initialize** card. *Alternative:* drop the Hub and put actions in the sidebar.

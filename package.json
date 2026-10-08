@@ -72,6 +72,15 @@
         "icon": "$(filter)"
       },
       {
+        "command": "blueprint.clearAdrFilter",
+        "title": "BluePrint: Clear ADR Filter",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "blueprint.showLastReview",
+        "title": "BluePrint: Show Last Compliance Review"
+      },
+      {
         "command": "blueprint.configureRoles",
         "title": "BluePrint: Configure Team & Roles",
         "icon": "$(organization)"
@@ -124,6 +133,7 @@
       "editor/title": [
         {
           "command": "blueprint.openHub",
+          "when": "blueprint.initialized",
           "group": "navigation"
         }
       ],
@@ -168,6 +178,14 @@
           "when": "blueprint.initialized"
         },
         {
+          "command": "blueprint.clearAdrFilter",
+          "when": "blueprint.adrFilterActive"
+        },
+        {
+          "command": "blueprint.showLastReview",
+          "when": "false"
+        },
+        {
           "command": "blueprint.revertArch",
           "when": "blueprint.initialized"
         },
@@ -202,6 +220,11 @@
           "command": "blueprint.filterAdrs",
           "when": "view == blueprint.adrBrowser",
           "group": "navigation@2"
+        },
+        {
+          "command": "blueprint.clearAdrFilter",
+          "when": "view == blueprint.adrBrowser && blueprint.adrFilterActive",
+          "group": "navigation@3"
         },
         {
           "command": "blueprint.configureRoles",

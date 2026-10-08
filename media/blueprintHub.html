@@ -80,6 +80,9 @@
     .card-desc  { font-size: 11px; color: var(--vscode-descriptionForeground); line-height: 1.5; }
 
     .card-arrow { font-size: 16px; opacity: 0.35; flex-shrink: 0; }
+    .icon-init       { background: rgba(0, 122, 204, 0.12); }
+
+    .hidden { display: none !important; }
   </style>
 </head>
 <body>
@@ -89,54 +92,78 @@
     <div class="hub-subtitle">Architecture-aware development assistant</div>
   </div>
 
-  <div class="git-reminder">
-    <span class="git-reminder-label">Before you run</span>
-    Modified files are picked up automatically. <strong>New files</strong> must be staged
-    first — run <code>git add &lt;file&gt;</code> before checking.
-    Always run checks <strong>before</strong> <code>git commit</code>.
+  <!-- Shown until the extension reports that the project is initialized -->
+  <div id="view-uninitialized" class="hidden">
+    <div class="section-label">Get started</div>
+    <button class="action-card" id="btn-init" title="Set up BluePrint for this project: LLM provider, team roles and ARCH.md">
+      <div class="card-icon icon-init">◇</div>
+      <div class="card-body">
+        <div class="card-title">Initialize BluePrint</div>
+        <div class="card-desc">BluePrint isn't set up in this project yet. Choose an LLM provider, set up roles and generate ARCH.md for this codebase.</div>
+      </div>
+      <span class="card-arrow">›</span>
+    </button>
   </div>
 
-  <div class="section-label">What would you like to do?</div>
-
-  <button class="action-card" id="btn-violations" title="Check whether your code changes break existing architecture constraints or ADRs">
-    <div class="card-icon icon-violations">⚠</div>
-    <div class="card-body">
-      <div class="card-title">Check for Violations</div>
-      <div class="card-desc">Detect code changes that break your architecture constraints or recorded decisions.</div>
+  <div id="view-initialized" class="hidden">
+    <div class="git-reminder">
+      <span class="git-reminder-label">Before you run</span>
+      Reviews look at everything not yet committed: changed, new, deleted and renamed files
+      (files ignored by <code>.gitignore</code> are skipped).
+      Run checks <strong>before</strong> <code>git commit</code>.
     </div>
-    <span class="card-arrow">›</span>
-  </button>
 
-  <button class="action-card" id="btn-extensions" title="Detect new structural components introduced by your changes that are not yet in ARCH.md">
-    <div class="card-icon icon-extensions">◈</div>
-    <div class="card-body">
-      <div class="card-title">Check for Extensions</div>
-      <div class="card-desc">Detect new structural components in your changes that are not yet documented in your architecture.</div>
-    </div>
-    <span class="card-arrow">›</span>
-  </button>
+    <div class="section-label">What would you like to do?</div>
 
-  <button class="action-card" id="btn-precheck" title="Check your AI coding prompt against architecture constraints before writing any code">
-    <div class="card-icon icon-precheck">◎</div>
-    <div class="card-body">
-      <div class="card-title">Pre-Check Prompt</div>
-      <div class="card-desc">Check your AI coding prompt against architecture constraints before writing any code.</div>
-    </div>
-    <span class="card-arrow">›</span>
-  </button>
+    <button class="action-card" id="btn-violations" title="Check whether your code changes break existing architecture constraints or ADRs">
+      <div class="card-icon icon-violations">⚠</div>
+      <div class="card-body">
+        <div class="card-title">Check for Violations</div>
+        <div class="card-desc">Detect code changes that break your architecture constraints or recorded decisions.</div>
+      </div>
+      <span class="card-arrow">›</span>
+    </button>
 
-  <button class="action-card" id="btn-decision" title="Record a decision, a new constraint, or a changed requirement as an ADR">
-    <div class="card-icon icon-decision">✚</div>
-    <div class="card-body">
-      <div class="card-title">Add Decision</div>
-      <div class="card-desc">Describe a decision or a changed requirement in your own words. BluePrint drafts the ADR and updates ARCH.md.</div>
-    </div>
-    <span class="card-arrow">›</span>
-  </button>
+    <button class="action-card" id="btn-extensions" title="Detect new structural components introduced by your changes that are not yet in ARCH.md">
+      <div class="card-icon icon-extensions">◈</div>
+      <div class="card-body">
+        <div class="card-title">Check for Extensions</div>
+        <div class="card-desc">Detect new structural components in your changes that are not yet documented in your architecture.</div>
+      </div>
+      <span class="card-arrow">›</span>
+    </button>
+
+    <button class="action-card" id="btn-precheck" title="Check your AI coding prompt against architecture constraints before writing any code">
+      <div class="card-icon icon-precheck">◎</div>
+      <div class="card-body">
+        <div class="card-title">Pre-Check Prompt</div>
+        <div class="card-desc">Check your AI coding prompt against architecture constraints before writing any code.</div>
+      </div>
+      <span class="card-arrow">›</span>
+    </button>
+
+    <button class="action-card" id="btn-decision" title="Record a decision, a new constraint, or a changed requirement as an ADR">
+      <div class="card-icon icon-decision">✚</div>
+      <div class="card-body">
+        <div class="card-title">Add Decision</div>
+        <div class="card-desc">Describe a decision or a changed requirement in your own words. BluePrint drafts the ADR and updates ARCH.md.</div>
+      </div>
+      <span class="card-arrow">›</span>
+    </button>
+  </div>
 
 <script nonce="{{nonce}}">
   const vscode = acquireVsCodeApi();
 
+  window.addEventListener('message', ({ data: msg }) => {
+    if (msg.command !== 'state') return;
+    document.getElementById('view-initialized').classList.toggle('hidden', !msg.initialized);
+    document.getElementById('view-uninitialized').classList.toggle('hidden', msg.initialized);
+  });
+
+  document.getElementById('btn-init').addEventListener('click', () => {
+    vscode.postMessage({ command: 'init' });
+  });
   document.getElementById('btn-violations').addEventListener('click', () => {
     vscode.postMessage({ command: 'openViolations' });
   });
@@ -149,6 +176,8 @@
   document.getElementById('btn-decision').addEventListener('click', () => {
     vscode.postMessage({ command: 'openAddDecision' });
   });
+
+  vscode.postMessage({ command: 'ready' });
 </script>
 </body>
 </html>

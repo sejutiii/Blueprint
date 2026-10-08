@@ -106,8 +106,11 @@ export class AdrTreeProvider implements vscode.TreeDataProvider<AdrItem | vscode
 
     const items: (AdrItem | vscode.TreeItem)[] = [];
     if (this.filter) {
-      const banner = new vscode.TreeItem(`Filter: "${this.filter}" (run "BluePrint: Search ADRs" to change)`);
+      const banner = new vscode.TreeItem(`Filter: "${this.filter}"`);
+      banner.description = "click to clear";
+      banner.tooltip = "Click to show all ADRs again";
       banner.iconPath = new vscode.ThemeIcon("filter");
+      banner.command = { command: "blueprint.clearAdrFilter", title: "Clear ADR Filter" };
       items.push(banner);
     }
 

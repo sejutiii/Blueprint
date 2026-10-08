@@ -211,7 +211,9 @@
     <div class="info-wrap">
       <div class="info-icon">⚡</div>
       <h2 style="margin-bottom:8px">No uncommitted changes</h2>
-      <p>Make some code changes, then click the<br><strong>Review this change architecturally</strong> button.</p>
+      <p>BluePrint reviews what changed since the last git commit, and found nothing.<br>
+        Make some changes, then check again. (The project must be a git repository.)</p>
+      <div style="margin-top:18px"><button class="btn-secondary" id="btn-rerun-nodiff">Check again</button></div>
     </div>
   </div>
 
@@ -423,6 +425,7 @@
   }
   document.getElementById('btn-rerun').addEventListener('click', rerun);
   document.getElementById('btn-rerun-error').addEventListener('click', rerun);
+  document.getElementById('btn-rerun-nodiff').addEventListener('click', rerun);
 
   window.addEventListener('message', ({ data: msg }) => {
     switch (msg.command) {

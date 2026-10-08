@@ -85,7 +85,8 @@ npm run typecheck   # extension + test sources
 Run with F5, then open one of the projects in `test/`. A free Gemini or Groq key is enough.
 
 **Setup**
-- [ ] A fresh folder: status bar shows "BluePrint: Not initialized"; the sidebar views are hidden (T1, T2).
+- [ ] A fresh folder: status bar shows "BluePrint: Not initialized"; the sidebar views are hidden (T1, T2). No BluePrint button in the editor tab bar.
+- [ ] Before init, "BluePrint: Open Hub" shows only an "Initialize BluePrint" card, which opens the wizard. Leave the Hub open: once ARCH.md is generated it switches to the normal cards, and the editor tab bar gets the Hub button.
 - [ ] Initialize: an invalid key shows "…rejected this API key"; a valid key moves on; "Get a key ↗" opens the provider's page.
 - [ ] Generate the architecture; the sidebar appears (T3).
 - [ ] Answer a concrete constraint ("We use PostgreSQL"): a draft appears, editable, and a follow-up question comes next. Save with an empty title → inline error.
@@ -103,6 +104,12 @@ Run with F5, then open one of the projects in `test/`. A free Gemini or Groq key
 - [ ] Resolve two violations separately with "Update Architecture": two ADRs (D2). "Modify Code" records none.
 - [ ] Register one component, dismiss another (T39, T40). The ARCH.md viewer highlights Components.
 - [ ] Create a new file: the review prompt appears once even for several files (debounced).
+- [ ] Hub → Check for Violations, then "Re-run review": the panel still says nothing about new components (mode kept). Same for Check for Extensions.
+- [ ] After a review with violations, click "Violation" in the status bar: the open Compliance panel comes to the front with no new review. Close the panel and click again: the review re-runs in the same mode.
+- [ ] Review with nothing changed (commit everything first): "No uncommitted changes" with a working "Check again" button. Same screen in a folder that isn't a git repo.
+
+**ADR Browser**
+- [ ] Filter ADR Browser → `postgres`: the banner reads `Filter: "postgres"` with a dimmed "click to clear", and a Clear-filter button appears in the view title. Either one clears the filter and the button disappears.
 
 **Roles**
 - [ ] Fresh project without `roles.json`: the wizard shows "Team & Roles" as step 2 with your git email. "A team" with an invalid email → inline error; valid → `.blueprint/roles.json` written, next screen says "you are an Architect".

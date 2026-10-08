@@ -29,6 +29,8 @@ let orchestrator: Orchestrator;
 
 // Last diff that was reviewed — decisions recorded in the compliance panel link back to these files.
 let lastReviewedFiles: string[] = [];
+// Mode the Compliance panel was opened with; "Re-run" and the status bar's re-run keep it.
+let lastReviewMode: ReviewMode = "full";
 let extensionUri: vscode.Uri;
 
 // Read-only documents for previews (e.g. a regenerated ARCH.md shown in a diff before applying).
@@ -78,6 +80,7 @@ export function activate(context: vscode.ExtensionContext): void {
   register("blueprint.init",           () => handleInit(context));
   register("blueprint.openHub",        () => handleHub(context));
   register("blueprint.reviewChange",   () => handleReview(context, "full"));
+  register("blueprint.showLastReview", () => handleShowLastReview(context));
   register("blueprint.preCheck",       () => handlePreCheck(context));
   register("blueprint.viewArch",       () => openArchMd());
   register("blueprint.openAdrBrowser", () => vscode.commands.executeCommand("workbench.view.extension.blueprint-explorer"));
@@ -87,6 +90,7 @@ export function activate(context: vscode.ExtensionContext): void {
   register("blueprint.rejectAdr",      (arg?: unknown) => handleReject(arg));
   register("blueprint.searchAdrs",     () => handleSearchAdrs());
   register("blueprint.filterAdrs",     () => handleFilterAdrs());
+  register("blueprint.clearAdrFilter", () => setAdrFilter(""));
   register("blueprint.configureRoles", () => handleConfigureRoles());
   register("blueprint.revertArch",     () => handleRevertArch());
   register("blueprint.regenerateArch", () => handleRegenerateArch());
@@ -189,6 +193,7 @@ async function checkInitialized(): Promise<void> {
     statusBar.setUninitialized();
     await refreshRoles();
   }
+  await pushHubState();
 }
 
 // ── Roles: who you are, shown everywhere a role matters ────────────────────
@@ -348,6 +353,7 @@ async function openSetupPanel(context: vscode.ExtensionContext, mode: "setup" | 
             message.systemName as string
           );
           await vscode.commands.executeCommand("setContext", "blueprint.initialized", true);
+          await pushHubState();
           panel.postMessage({ command: "success", blueprint });
           break;
         }
@@ -524,7 +530,7 @@ function setCompliancePanelHandler(panel: BlueprintPanel): void {
 
         case "rerun":
           panel.postMessage({ command: "checking" });
-          await runReview(panel, "full");
+          await runReview(panel, lastReviewMode);
           break;
       }
     } catch (err) {
@@ -555,16 +561,28 @@ async function runReview(panel: BlueprintPanel, mode: ReviewMode): Promise<void>
 }
 
 async function handleReview(context: vscode.ExtensionContext, mode: ReviewMode): Promise<void> {
+  lastReviewMode = mode;
   const panel = BlueprintPanel.show("postGeneration", context.extensionUri);
   setCompliancePanelHandler(panel);
   await panel.loadMedia("compliancePanel.html", { nonce: panel.nonce });
   await runReview(panel, mode);
 }
 
+// Status bar "Violation": bring back the review that found it; only a closed panel costs a new review.
+async function handleShowLastReview(context: vscode.ExtensionContext): Promise<void> {
+  if (BlueprintPanel.get("postGeneration")) {
+    BlueprintPanel.show("postGeneration", context.extensionUri);
+    return;
+  }
+  await handleReview(context, lastReviewMode);
+}
+
 async function handleHub(context: vscode.ExtensionContext): Promise<void> {
   const panel = BlueprintPanel.show("hub", context.extensionUri);
   panel.setMessageHandler(async (msg) => {
     switch (msg.command) {
+      case "ready":          await pushHubState();                                         break;
+      case "init":           await handleInit(context).catch(reportError);                 break;
       case "openViolations": await handleReview(context, "violations").catch(reportError); break;
       case "openExtensions": await handleReview(context, "extensions").catch(reportError); break;
       case "openPreCheck":   await handlePreCheck(context).catch(reportError);              break;
@@ -572,6 +590,11 @@ async function handleHub(context: vscode.ExtensionContext): Promise<void> {
     }
   });
   await panel.loadMedia("blueprintHub.html", { nonce: panel.nonce });
+}
+
+// Before init the Hub offers only "Initialize"; it switches over live once setup finishes.
+async function pushHubState(): Promise<void> {
+  BlueprintPanel.get("hub")?.postMessage({ command: "state", initialized: await orchestrator.isInitialized() });
 }
 
 // ── Audit trail ─────────────────────────────────────────────────────────────
@@ -835,7 +858,13 @@ async function handleFilterAdrs(): Promise<void> {
     prompt: "Filter the ADR Browser (leave empty to clear)",
     value: adrTreeProvider.getFilter(),
   });
-  if (query !== undefined) { adrTreeProvider.setFilter(query); }
+  if (query !== undefined) { await setAdrFilter(query); }
+}
+
+// The context key shows the "Clear filter" button in the ADR Browser title only while filtering.
+async function setAdrFilter(query: string): Promise<void> {
+  adrTreeProvider.setFilter(query.trim());
+  await vscode.commands.executeCommand("setContext", "blueprint.adrFilterActive", !!query.trim());
 }
 
 async function handleConfigureRoles(): Promise<void> {
