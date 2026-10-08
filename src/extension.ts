@@ -12,7 +12,7 @@ import { AccessControl } from "./access/AccessControl";
 import { Orchestrator, BlueprintError, ReviewMode, RolesView } from "./orchestrator/Orchestrator";
 import { parseEmailList } from "./access/roles";
 import { ConstraintElicitationAgent } from "./agents/ConstraintElicitationAgent";
-import { ElicitationSession, WizardQuestion } from "./agents/ElicitationSession";
+import { DraftToShow, ElicitationSession, WizardQuestion } from "./agents/ElicitationSession";
 import { ConstraintDraft } from "./prompts/constraintPrompts";
 import { adrFilename } from "./prompts/adrPrompts";
 import { ViolationDetail, ExtensionDetail, ADR, AuditEntry, DiffSummary } from "./types";
@@ -310,6 +310,10 @@ async function openSetupPanel(context: vscode.ExtensionContext, mode: "setup" | 
     }
   };
 
+  const showDraft = ({ draft, basis }: DraftToShow) => {
+    panel.postMessage({ command: "showDraft", draft, basis });
+  };
+
   const ELICITATION_COMMANDS = new Set(["startConstraints", "submitAnswer", "skipQuestion", "saveDraft", "discardDraft"]);
 
   panel.setMessageHandler(async (message) => {
@@ -386,21 +390,18 @@ async function openSetupPanel(context: vscode.ExtensionContext, mode: "setup" | 
           const answer = message.answer as string;
           panel.postMessage({ command: "analyzing" });
           const result = await constraintAgent.analyzeAnswer(current, answer);
-          session.recordAnswer(answer, result.followUp);
-          if (result.hasConstraint && result.draft) {
-            panel.postMessage({
-              command: "showDraft", draft: result.draft,
-              index: current.topicIndex, total: current.topicTotal, hasFollowUp: !!result.followUp && !current.isFollowUp,
-            });
-          } else {
-            showNext(session.advance());
-          }
+          // A topic answer with a follow-up shows no draft yet: one ADR per topic, after the follow-up.
+          const toShow = session.recordAnswer(answer, result);
+          if (toShow) { showDraft(toShow); } else { showNext(session.advance()); }
           break;
         }
 
-        case "skipQuestion":
-          if (session) { showNext(session.skip()); }
+        case "skipQuestion": {
+          if (!session) { return; }
+          const held = session.takeHeldDraft();
+          if (held) { showDraft(held); } else { showNext(session.skip()); }
           break;
+        }
 
         case "discardDraft":
           if (session) { showNext(session.advance()); }

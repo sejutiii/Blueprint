@@ -986,9 +986,12 @@
         document.getElementById('draft-context').value      = d.context      || '';
         document.getElementById('draft-decision').value     = d.decision     || '';
         document.getElementById('draft-consequences').value = d.consequences || '';
-        document.getElementById('draft-banner').textContent = msg.hasFollowUp
-          ? 'Constraint detected. Review and edit the draft ADR before saving. A follow-up question comes next.'
-          : 'Constraint detected. Review and edit the draft ADR before saving.';
+        const basis = {
+          both:  'Based on both of your answers. Review and edit the draft ADR before saving.',
+          first: 'Based on your first answer only. Review and edit the draft ADR before saving.',
+        };
+        document.getElementById('draft-banner').textContent =
+          basis[msg.basis] || 'Constraint detected. Review and edit the draft ADR before saving.';
         setDraftButtonsDisabled(false);
         showCqState('cq-draft');
         break;

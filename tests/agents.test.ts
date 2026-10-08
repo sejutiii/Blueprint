@@ -200,14 +200,15 @@ describe("ConstraintElicitationAgent", () => {
       .toEqual({ hasConstraint: false });
   });
 
-  it("a follow-up's answer is analysed with the original exchange and follow-ups disabled", async () => {
+  it("a follow-up's answer is analysed with the original exchange, as one ADR, with follow-ups disabled", async () => {
     const llm = new FakeLLM([JSON.stringify({ hasConstraint: false })]);
     const agent = new ConstraintElicitationAgent(llm.asClient());
     const session = agent.startSession();
-    session.recordAnswer("PostgreSQL", { question: "Only datastore?", placeholder: "" });
+    session.recordAnswer("PostgreSQL", { hasConstraint: false, followUp: { question: "Only datastore?", placeholder: "" } });
     const followUp = session.advance()!;
     await agent.analyzeAnswer(followUp, "Redis for caching");
     expect(llm.calls[0].user).toContain('Earlier answer: "PostgreSQL"');
+    expect(llm.calls[0].user).toContain("Draft ONE ADR that covers both answers");
     expect(llm.calls[0].user).toContain("Follow-ups are disabled");
   });
 });

@@ -330,21 +330,62 @@ describe("DecisionService — approval queue (SRS 3.2.5)", () => {
 });
 
 describe("ElicitationSession — branching wizard (SRS 3.1, D5)", () => {
+  const ask = (question: string) => ({ hasConstraint: false, followUp: { question, placeholder: "" } });
+  const draft = (title: string) => ({ title, context: "c", decision: "d", consequences: "q" });
+
   it("inserts at most one follow-up per topic, never nested, dropped on skip", () => {
     const s = new ElicitationSession(CONSTRAINT_QUESTIONS);
     expect(s.getCurrent()).toMatchObject({ id: "technology", topicIndex: 0, topicTotal: 5, isFollowUp: false });
 
-    s.recordAnswer("PostgreSQL", { question: "Only datastore?", placeholder: "" });
+    s.recordAnswer("PostgreSQL", ask("Only datastore?"));
     expect(s.advance()).toMatchObject({ isFollowUp: true, topicIndex: 0, parent: { answer: "PostgreSQL" } });
 
-    s.recordAnswer("Redis too", { question: "nested?", placeholder: "" });
+    s.recordAnswer("Redis too", ask("nested?"));
     expect(s.advance()).toMatchObject({ id: "scalability", isFollowUp: false });
 
-    s.recordAnswer("10k users", { question: "p95?", placeholder: "" });
+    s.recordAnswer("10k users", ask("p95?"));
     expect(s.skip()).toMatchObject({ id: "conventions" });
 
     expect(s.advance()?.id).toBe("integrations");
     expect(s.advance()?.id).toBe("nonfunctional");
     expect(s.advance()).toBeNull();
+  });
+
+  it("one ADR per topic: with a follow-up, the draft waits and covers both answers", () => {
+    const s = new ElicitationSession(CONSTRAINT_QUESTIONS);
+    // The topic answer has a draft, but the follow-up comes first: nothing to show yet.
+    expect(s.recordAnswer("PostgreSQL", { hasConstraint: true, draft: draft("Use PostgreSQL"), followUp: { question: "Only datastore?", placeholder: "" } }))
+      .toBeNull();
+    expect(s.advance()?.isFollowUp).toBe(true);
+    // The follow-up's draft replaces the held one; it is the topic's only draft.
+    expect(s.recordAnswer("Redis for caching", { hasConstraint: true, draft: draft("PostgreSQL primary, Redis cache only") }))
+      .toEqual({ draft: draft("PostgreSQL primary, Redis cache only"), basis: "both" });
+    expect(s.takeHeldDraft()).toBeNull();
+    expect(s.advance()?.id).toBe("scalability");
+  });
+
+  it("a follow-up that adds nothing, or is skipped, falls back to the topic answer's draft", () => {
+    const s = new ElicitationSession(CONSTRAINT_QUESTIONS);
+    s.recordAnswer("PostgreSQL", { hasConstraint: true, draft: draft("Use PostgreSQL"), followUp: { question: "Only datastore?", placeholder: "" } });
+    s.advance();
+    expect(s.recordAnswer("not sure yet", { hasConstraint: false })).toEqual({ draft: draft("Use PostgreSQL"), basis: "first" });
+
+    s.advance(); // → scalability
+    s.recordAnswer("fast", { hasConstraint: true, draft: draft("Respond quickly"), followUp: { question: "Target latency?", placeholder: "" } });
+    s.advance(); // → its follow-up, which the developer skips
+    expect(s.takeHeldDraft()).toEqual({ draft: draft("Respond quickly"), basis: "first" });
+    expect(s.advance()?.id).toBe("conventions");
+  });
+
+  it("without a follow-up the draft shows at once; a held draft never leaks into the next topic", () => {
+    const s = new ElicitationSession(CONSTRAINT_QUESTIONS);
+    expect(s.recordAnswer("React", { hasConstraint: true, draft: draft("Use React") })).toEqual({ draft: draft("Use React"), basis: "answer" });
+    s.advance();
+    // A tentative topic answer can still get a follow-up; with nothing concrete in either, no draft at all.
+    expect(s.recordAnswer("maybe 10k users", ask("What would decide it?"))).toBeNull();
+    s.advance();
+    expect(s.recordAnswer("don't know", { hasConstraint: false })).toBeNull();
+    expect(s.advance()?.id).toBe("conventions");
+    expect(s.takeHeldDraft()).toBeNull(); // only a follow-up can have a held draft
   });
 });

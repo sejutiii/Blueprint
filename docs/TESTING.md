@@ -90,7 +90,8 @@ Run with F5, then open one of the projects in `test/`. A free Gemini or Groq key
 - [ ] Hub after init: header shows your email and role; four cards (Review my changes, Pre-check a prompt, View architecture, Add a decision) and links (Audit trail, Team & roles, Change LLM provider) each open the right thing. With a pending decision a yellow banner shows the count ("needs your approval" / "waiting for an Architect") and opens the ADR Browser; approving it removes the banner while the Hub stays open.
 - [ ] Initialize: an invalid key shows "…rejected this API key"; a valid key moves on; "Get a key ↗" opens the provider's page.
 - [ ] Generate the architecture; the sidebar appears (T3).
-- [ ] Answer a concrete constraint ("We use PostgreSQL"): a draft appears, editable, and a follow-up question comes next. Save with an empty title → inline error.
+- [ ] Answer a concrete constraint ("We use PostgreSQL"): if a follow-up is asked, it comes **before** any draft. Answer it ("Redis only as a cache"): one draft "Based on both of your answers" that mentions both. Save with an empty title → inline error.
+- [ ] Skip a follow-up (or answer "not sure"): the draft from the first answer is offered ("Based on your first answer only"). Each topic produces at most one ADR.
 - [ ] Re-run Initialize: a confirmation dialog appears; after confirming, Revert ARCH.md lists the old version (T15).
 - [ ] BluePrint: Change LLM Provider / API Key (palette or ADR Browser "…" menu): the current provider is marked; the key icon opens the key page; a bad key shows the error inline and keeps the box open; a good key saves and the next review uses the new provider. Escape while checking saves nothing.
 

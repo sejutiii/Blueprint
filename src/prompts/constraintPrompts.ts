@@ -86,6 +86,7 @@ Schema (omit "draft" when hasConstraint is false; omit "followUp" when no follow
 Rules for the draft:
 - Only record decisions that are concrete: "We are using React" yes. "We might use React" no.
 - One ADR per response — pick the most significant constraint if multiple are mentioned.
+- For a follow-up, the draft covers BOTH answers as one decision, keeping every concrete fact from each (names, numbers, limits): the follow-up answer refines, bounds or adds detail to the earlier answer (e.g. "PostgreSQL is the primary datastore; Redis is allowed only for caching"). Never draft a separate decision about the follow-up alone. If neither answer is concrete, set hasConstraint to false.
 - Keep each field to 2-3 sentences maximum.
 
 Rules for followUp:
@@ -99,8 +100,11 @@ export function buildConstraintAnalysisPrompt(
   answer: string,
   parent?: ParentExchange
 ): string {
+  // The topic answer's draft is held until the follow-up is answered, so this one draft is the
+  // only ADR for the topic and must cover both answers.
   const context = parent
-    ? `This is a follow-up. Earlier question: "${parent.question}"\nEarlier answer: "${parent.answer}"\n\n`
+    ? `This is a follow-up. Earlier question: "${parent.question}"\nEarlier answer: "${parent.answer}"\n` +
+      "Draft ONE ADR that covers both answers together, keeping every concrete fact from each.\n\n"
     : "";
   // Follow-ups are one level deep, so the wizard stays bounded (5 topics, at most 10 questions).
   const followUps = parent
