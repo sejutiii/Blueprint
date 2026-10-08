@@ -72,12 +72,15 @@ export function activate(context: vscode.ExtensionContext): void {
 
   checkInitialized().catch(console.error);
 
+  // Command arguments come from VS Code untyped (tree items, menus, executeCommand callers).
+  /* eslint-disable @typescript-eslint/no-explicit-any */
   const register = (command: string, run: (...args: any[]) => unknown) =>
     context.subscriptions.push(
       vscode.commands.registerCommand(command, (...args: any[]) =>
         Promise.resolve(run(...args)).catch(reportError)
       )
     );
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 
   register("blueprint.init",           () => handleInit(context));
   register("blueprint.openHub",        () => handleHub(context));

@@ -1,6 +1,9 @@
 // Local, offline sentence-embedding model (runs in-process via ONNX Runtime — no API key, no
 // network calls after the one-time model download on first use).
-let pipelinePromise: Promise<any> | null = null;
+// The one call BluePrint makes on the transformers.js pipeline (it is loaded with require, untyped).
+type FeatureExtractor = (text: string, options: { pooling: "mean"; normalize: boolean }) => Promise<{ data: Float32Array }>;
+
+let pipelinePromise: Promise<FeatureExtractor> | null = null;
 let cacheDir: string | null = null;
 
 const MODEL_ID = "Xenova/all-MiniLM-L6-v2";
@@ -12,7 +15,7 @@ export function configureEmbeddings(options: { cacheDir: string }): void {
   cacheDir = options.cacheDir;
 }
 
-async function getPipeline(): Promise<any> {
+async function getPipeline(): Promise<FeatureExtractor> {
   if (!pipelinePromise) {
     pipelinePromise = (async () => {
       // CommonJS require (not import()) so the same transformers.node.cjs file is used in
@@ -40,7 +43,7 @@ export class EmbeddingService {
     try {
       const extractor = await getPipeline();
       const output = await extractor(text, { pooling: "mean", normalize: true });
-      return Array.from(output.data as Float32Array);
+      return Array.from(output.data);
     } catch (err) {
       console.error("BluePrint: local embedding model unavailable, falling back to TF-IDF only.", err);
       EmbeddingService.loadFailed = true;
