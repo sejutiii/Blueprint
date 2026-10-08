@@ -1,4 +1,5 @@
 import { ArchBlueprint } from "../types";
+import { COMPONENT_TABLE_HEADER, statusCell } from "../storage/archPatch";
 
 export const ARCH_GENERATION_SYSTEM_PROMPT = `You are a software architecture analyst. Analyze a system description and extract its architectural structure into a precise JSON format.
 
@@ -41,7 +42,9 @@ The JSON must match this exact schema:
     {
       "name": "ComponentName",
       "responsibility": "What this component does",
-      "technology": "Technology used (omit field if not evident)"
+      "technology": "Technology used (omit field if not evident)",
+      "status": "implemented or planned",
+      "files": ["Source files that implement it, as paths from the snapshot (empty when planned)"]
     }
   ],
   "dataFlow": "Description of how data moves through the system end-to-end",
@@ -53,6 +56,7 @@ Rules:
 - The current blueprint is the baseline. Keep a component's existing name when it still matches the code, so names stay stable across regenerations.
 - Add components that the code clearly contains but the blueprint lacks. A component is a module, service, layer or subsystem with its own responsibility — not a single helper file.
 - Keep a blueprint component unless the snapshot shows it clearly no longer exists. If you cannot tell, keep it and add an open question.
+- status: "implemented" when the snapshot contains code that carries out the component's main responsibility, listing those files (at most 5); otherwise "planned" (described but not built yet), with no files.
 - Ground every statement in the snapshot. Do not invent technologies, services or flows that the snapshot does not show.
 - constraints: technology choices evident from the code (frameworks, datastores, runtimes). Existing constraints are preserved separately, so list only what the code shows.
 - openQuestions: keep existing questions the code does not answer; add one for each important mismatch between the blueprint and the code.
@@ -65,7 +69,7 @@ export function buildArchFromCodePrompt(current: ArchBlueprint, snapshot: string
 
 export function renderArchMd(blueprint: ArchBlueprint, systemName = "System"): string {
   const componentRows = blueprint.components
-    .map((c) => `| ${c.name} | ${c.responsibility} | ${c.technology ?? "—"} |`)
+    .map((c) => `| ${c.name} | ${c.responsibility} | ${c.technology ?? "—"} | ${statusCell(c)} |`)
     .join("\n");
 
   const constraints = blueprint.constraints.length
@@ -86,8 +90,7 @@ ${blueprint.systemOverview}
 
 ## Components
 
-| Component | Responsibility | Technology |
-|---|---|---|
+${COMPONENT_TABLE_HEADER.join("\n")}
 ${componentRows}
 
 ## Data Flow

@@ -13,6 +13,7 @@ const EVENTS: Record<AuditEventType, { label: string; icon: string }> = {
   pre_check:          { label: "Pre-check",         icon: "shield" },
   arch_updated:       { label: "ARCH.md updated",   icon: "edit" },
   arch_reverted:      { label: "ARCH.md reverted",  icon: "discard" },
+  component_implemented: { label: "Component implemented", icon: "pass" },
   roles_updated:      { label: "Roles updated",     icon: "organization" },
 };
 

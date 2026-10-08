@@ -33,36 +33,94 @@ function splitRow(row: string): string[] {
   return row.trim().replace(/^\|/, "").replace(/\|$/, "").split(/(?<!\\)\|/).map((c) => c.trim());
 }
 
+export const COMPONENT_TABLE_HEADER = ["| Component | Responsibility | Technology | Status |", "|---|---|---|---|"];
+const MAX_FILES_SHOWN = 3;
+/** Files remembered per component in arch.json: enough to recognise its code in later reviews. */
+export const MAX_COMPONENT_FILES = 10;
+
+/** The Status cell: "Planned", or "Implemented — `a.ts`, `b.ts`" (first few files). */
+export function statusCell(component: Pick<ArchComponent, "status" | "files">): string {
+  if (component.status !== "implemented") { return "Planned"; }
+  const files = component.files ?? [];
+  if (!files.length) { return "Implemented"; }
+  const shown = files.slice(0, MAX_FILES_SHOWN).map((f) => `\`${f}\``).join(", ");
+  const more  = files.length > MAX_FILES_SHOWN ? `, +${files.length - MAX_FILES_SHOWN} more` : "";
+  return `Implemented — ${shown}${more}`;
+}
+
+const componentValues = (c: ArchComponent): string[] =>
+  [cell(c.name), cell(c.responsibility), cell(c.technology ?? "—") || "—", cell(statusCell(c))];
+
+/**
+ * The Components table's rows (absolute line indexes) and its Status column. Older ARCH.md
+ * files lack that column: it is added on first use, with every existing row marked "Planned".
+ */
+function componentTable(lines: string[], range: SectionRange): { rows: number[]; status: number } | null {
+  const rows: number[] = [];
+  for (let i = range.start + 1; i < range.end; i++) {
+    if (lines[i].trim().startsWith("|")) { rows.push(i); } else if (rows.length) { break; }
+  }
+  if (rows.length < 2) { return null; }
+
+  const header = splitRow(lines[rows[0]]).map((h) => h.toLowerCase());
+  let status = header.indexOf("status");
+  if (status === -1) {
+    status = header.length;
+    lines[rows[0]] = rowOf([...splitRow(lines[rows[0]]), "Status"]);
+    lines[rows[1]] = `|${[...splitRow(lines[rows[1]]), "---"].join("|")}|`;
+    for (const r of rows.slice(2)) { lines[r] = rowOf([...splitRow(lines[r]), "Planned"]); }
+  }
+  return { rows, status };
+}
+
 /** Insert a component row into the Components table, creating the table/section if needed. */
 export function addComponentRow(markdown: string, component: ArchComponent): PatchResult {
   const eol   = markdown.includes("\r\n") ? "\r\n" : "\n";
   const lines = markdown.split(/\r?\n/);
   const range = findSection(lines, SECTION_COMPONENTS);
-  const values = [cell(component.name), cell(component.responsibility), cell(component.technology ?? "—") || "—"];
+  const values = componentValues(component);
 
   if (!range) {
-    const block = ["", `## ${SECTION_COMPONENTS}`, "", "| Component | Responsibility | Technology |", "|---|---|---|", rowOf(values), ""];
+    const block = ["", `## ${SECTION_COMPONENTS}`, "", ...COMPONENT_TABLE_HEADER, rowOf(values), ""];
     return { markdown: [...trimTrailingBlank(lines), ...block].join(eol), touched: [SECTION_COMPONENTS] };
   }
 
-  const body      = lines.slice(range.start + 1, range.end);
-  const tableRows = body.map((l, i) => ({ l, i })).filter(({ l }) => l.trim().startsWith("|"));
-
-  if (tableRows.length === 0) {
-    const insertAt = range.start + 1;
-    const block    = ["", "| Component | Responsibility | Technology |", "|---|---|---|", rowOf(values)];
-    lines.splice(insertAt, 0, ...block);
+  const table = componentTable(lines, range);
+  if (!table) {
+    lines.splice(range.start + 1, 0, "", ...COMPONENT_TABLE_HEADER, rowOf(values));
     return { markdown: lines.join(eol), touched: [SECTION_COMPONENTS] };
   }
 
-  const existing = tableRows.slice(2).some(({ l }) => splitRow(l)[0]?.toLowerCase() === values[0].toLowerCase());
+  const existing = table.rows.slice(2).some((r) => splitRow(lines[r])[0]?.toLowerCase() === values[0].toLowerCase());
   if (existing) { return { markdown, touched: [] }; }
 
-  // Match the table's current column count so a manually widened table stays valid.
-  const columns = splitRow(tableRows[0].l).length;
-  const padded  = Array.from({ length: columns }, (_, i) => values[i] ?? "—");
-  const last    = tableRows[tableRows.length - 1].i;
-  lines.splice(range.start + 1 + last + 1, 0, rowOf(padded));
+  // Match the table's column layout so a manually widened table stays valid.
+  const columns = splitRow(lines[table.rows[0]]).length;
+  const padded  = Array.from({ length: columns }, (_, i) =>
+    i === table.status ? values[3] : i < 3 ? values[i] : "—");
+  lines.splice(table.rows[table.rows.length - 1] + 1, 0, rowOf(padded));
+  return { markdown: lines.join(eol), touched: [SECTION_COMPONENTS] };
+}
+
+/**
+ * Set a component's Status cell (e.g. a planned component is now implemented), adding the Status
+ * column to an older table first. A component without a row (removed by hand) gets one.
+ */
+export function setComponentStatus(markdown: string, component: ArchComponent): PatchResult {
+  const eol   = markdown.includes("\r\n") ? "\r\n" : "\n";
+  const lines = markdown.split(/\r?\n/);
+  const range = findSection(lines, SECTION_COMPONENTS);
+  const table = range ? componentTable(lines, range) : null;
+  const name  = cell(component.name).toLowerCase();
+  const row   = table?.rows.slice(2).find((r) => splitRow(lines[r])[0]?.toLowerCase() === name);
+  if (!table || row === undefined) { return addComponentRow(markdown, component); }
+
+  const cells = splitRow(lines[row]);
+  while (cells.length <= table.status) { cells.push("—"); }
+  const next = cell(statusCell(component));
+  if (cells[table.status] === next) { return { markdown, touched: [] }; }
+  cells[table.status] = next;
+  lines[row] = rowOf(cells);
   return { markdown: lines.join(eol), touched: [SECTION_COMPONENTS] };
 }
 

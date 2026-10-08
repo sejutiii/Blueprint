@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { ArchBlueprint, ArchEffect } from "../types";
 import { renderArchMd } from "../prompts/archPrompts";
-import { addComponentRow, addConstraint, replaceConstraint, setLastUpdated } from "./archPatch";
+import { MAX_COMPONENT_FILES, addComponentRow, addConstraint, replaceConstraint, setComponentStatus, setLastUpdated } from "./archPatch";
 
 export interface ArchHistoryEntry {
   id: string;           // also the snapshot file stem
@@ -104,6 +104,12 @@ export class FileStore {
       if (!blueprint.constraints.some((c) => c.toLowerCase() === effect.constraint.trim().toLowerCase())) {
         blueprint.constraints.push(effect.constraint.trim());
       }
+    } else if (effect.kind === "mark-implemented") {
+      const component = blueprint.components.find((c) => c.name.toLowerCase() === effect.component.trim().toLowerCase());
+      if (!component) { throw new Error(`ARCH.md has no component named "${effect.component}".`); }
+      component.status = "implemented";
+      component.files  = [...new Set([...(component.files ?? []), ...effect.files])].slice(0, MAX_COMPONENT_FILES);
+      patched = setComponentStatus(currentMd, component);
     } else {
       patched = replaceConstraint(currentMd, effect.replaces, effect.constraint);
       const next = effect.constraint.trim();

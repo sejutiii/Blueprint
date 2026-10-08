@@ -9,7 +9,9 @@ export type ArchEffect =
   | { kind: "add-constraint"; constraint: string }
   // A changed requirement: swap the superseded ADR's constraint line for the new one
   // (appended instead if that line is no longer in ARCH.md).
-  | { kind: "replace-constraint"; constraint: string; replaces: string };
+  | { kind: "replace-constraint"; constraint: string; replaces: string }
+  // A planned component now exists in the code. Recorded without an ADR: it was already decided.
+  | { kind: "mark-implemented"; component: string; files: string[] };
 
 export interface ADR {
   id: string;           // e.g. "0001"
@@ -29,10 +31,19 @@ export interface ADR {
   supersededBy?: string;   // id of the ADR that replaced this one
 }
 
+/** Planned: described (e.g. at setup) but not in the code yet. Implemented: present in the code. */
+export type ComponentStatus = "planned" | "implemented";
+
 export interface ArchComponent {
   name: string;
   responsibility: string;
   technology?: string;
+  status?: ComponentStatus; // missing (older arch.json) counts as planned
+  files?: string[];         // code that implements it, workspace-relative
+}
+
+export function componentStatus(c: ArchComponent): ComponentStatus {
+  return c.status === "implemented" ? "implemented" : "planned";
 }
 
 export interface ArchBlueprint {
@@ -69,12 +80,28 @@ export interface ExtensionDetail {
   responsibility: string;
   technology?: string;
   rationale: string;
+  files?: string[];     // the code that introduces it
+}
+
+/** Pass 2: new code that IS a planned component, which can now be marked implemented (no ADR). */
+export interface PlannedComponentMatch {
+  component: string;    // the planned component's name, exactly as in arch.json
+  files: string[];
+  rationale: string;
+}
+
+/** Pass 2: an added file that was checked and not reported, with the reason (shown to the developer). */
+export interface CheckedFile {
+  file: string;
+  reason: string;
 }
 
 export interface ComplianceResult {
   violation: boolean;
   violations: ViolationDetail[];
   extensions: ExtensionDetail[]; // Pass 2 output; runs in parallel with Pass 1
+  plannedImplemented?: PlannedComponentMatch[];
+  notReported?: CheckedFile[];
   adrsUsed: string[];   // ADR IDs used as context
 }
 
@@ -89,6 +116,7 @@ export type AuditEventType =
   | "adr_superseded"
   | "arch_updated"
   | "arch_reverted"
+  | "component_implemented"
   | "roles_updated";
 
 export interface AuditEntry {

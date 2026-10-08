@@ -106,6 +106,11 @@ Run with F5, then open one of the projects in `test/`. A free Gemini or Groq key
 - [ ] Add a file that contradicts an ADR (e.g. a MongoDB client) and a new self-contained module, then Review: violations and new components appear together (D1).
 - [ ] Resolve two violations separately with "Update Architecture": two ADRs (D2). "Modify Code" records none.
 - [ ] Register one component, dismiss another (T39, T40). The ARCH.md viewer highlights Components.
+- [ ] Planned vs implemented (D13): a fresh Initialize shows every component as "Planned" in ARCH.md's Status column. An older ARCH.md (no Status column) gets the column on its first component change, existing rows "Planned".
+- [ ] test5 (`notifications.ts`, `hello.py`): Review → `notifications.ts` is a **new component**; `hello.py` is under "Checked, not new" with a reason. Register the extension: one ADR, and ARCH.md shows it as "Implemented — `notifications.ts`".
+- [ ] Add code that *is* a planned component (e.g. a React `App.tsx` for a planned Frontend): it shows under "Planned components now in code". "Mark as Implemented" → ARCH.md row says "Implemented — `src/App.tsx`", **no ADR**, an audit entry "Component implemented", and Revert ARCH.md can undo it. Works as a Developer too.
+- [ ] "It's a New Component Instead" on a planned match, and "Register as new component anyway" on a checked file: a small form (name pre-filled from the file); registering creates the ADR as for a detected extension.
+- [ ] A new file next to an implemented component's code: "Checked, not new", naming that component.
 - [ ] Create a new file: the review prompt appears once even for several files (debounced).
 - [ ] After a review with violations, click "Violation" in the status bar: the open Compliance panel comes to the front with no new review. Close the panel and click again: the review re-runs in the same mode.
 - [ ] Resolve every violation in the panel (any mix of "Update Architecture" and "Modify Code"): the status bar goes back to "BluePrint" without a new review.

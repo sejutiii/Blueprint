@@ -5,7 +5,13 @@ import { ConstraintElicitationAgent } from "../src/agents/ConstraintElicitationA
 import { PreCheckAgent } from "../src/agents/PreCheckAgent";
 import { CONSTRAINT_QUESTIONS } from "../src/prompts/constraintPrompts";
 import { parseJsonObject } from "../src/util/llmJson";
+import { buildExtensionDetectionPrompt } from "../src/prompts/compliancePrompts";
+import { ArchComponent } from "../src/types";
 import { FakeLLM, blueprint, adr, diffSummary } from "./helpers";
+
+const IMPLEMENTED_API: ArchComponent = {
+  name: "ApiServer", responsibility: "Serves the REST API", status: "implemented", files: ["server.ts"],
+};
 
 describe("parseJsonObject (defensive parsing, SRS 4.3)", () => {
   it("strips markdown fences", () => {
@@ -56,6 +62,38 @@ describe("ArchitectureAgent", () => {
     expect(next.constraints).toEqual(["Use PostgreSQL as the primary database", "Express API"]);
     expect(mergeConstraints(["A", " a ", ""], ["B", "b"])).toEqual(["A", "B"]);
   });
+
+  it("D13: a blueprint generated from a description has only planned components", async () => {
+    const llm = new FakeLLM([JSON.stringify({
+      systemOverview: "s", dataFlow: "", constraints: [], openQuestions: [],
+      components: [{ name: "Frontend", responsibility: "UI", status: "implemented", files: ["app.tsx"] }],
+    })]);
+    const bp = await new ArchitectureAgent(llm.asClient()).generate("x");
+    expect(bp.components).toEqual([{ name: "Frontend", responsibility: "UI", status: "planned" }]);
+  });
+
+  it("D13: regeneration takes the code's statuses; a status left out keeps the current one", async () => {
+    const current = blueprint({ components: [
+      { name: "Api", responsibility: "REST", status: "implemented", files: ["api.ts"] },
+      { name: "Search", responsibility: "s", status: "planned" },
+    ] });
+    const llm = new FakeLLM([JSON.stringify({
+      systemOverview: "s", dataFlow: "", constraints: [], openQuestions: [],
+      components: [
+        { name: "Api", responsibility: "REST" },                                            // no status: stays implemented
+        { name: "Search", responsibility: "s", status: "implemented", files: ["search.ts"] }, // found in code
+        { name: "Mailer", responsibility: "m", status: "planned", files: ["ignored.ts"] },    // planned: no files
+        { name: "Queue", responsibility: "q" },                                             // new, no status: planned
+      ],
+    })]);
+    const next = await new ArchitectureAgent(llm.asClient()).regenerateFromCodebase(current, "snapshot");
+    expect(next.components.map((c) => [c.name, c.status, c.files])).toEqual([
+      ["Api", "implemented", ["api.ts"]],
+      ["Search", "implemented", ["search.ts"]],
+      ["Mailer", "planned", undefined],
+      ["Queue", "planned", undefined],
+    ]);
+  });
 });
 
 describe("ComplianceAgent", () => {
@@ -83,16 +121,61 @@ describe("ComplianceAgent", () => {
   it("T37/T38 + D2: extensions are a list; known components, duplicates and extras are dropped", () => {
     const many = Array.from({ length: 7 }, (_, i) => ({ name: `Svc${i}`, responsibility: "r", rationale: "why" }));
     const raw = JSON.stringify({ extensions: [{ name: "ApiServer", responsibility: "dup" }, { name: "svc0", responsibility: "dup" }, ...many] });
-    const exts = ComplianceAgent.parseExtensionResponse(raw, ["ApiServer"]);
-    expect(exts.map((e) => e.name)).toEqual(["svc0", "Svc1", "Svc2", "Svc3", "Svc4"]);
-    expect(ComplianceAgent.parseExtensionResponse(JSON.stringify({ extensions: [] }))).toEqual([]);
+    const { extensions } = ComplianceAgent.parseExtensionResponse(raw, [IMPLEMENTED_API]);
+    expect(extensions.map((e) => e.name)).toEqual(["svc0", "Svc1", "Svc2", "Svc3", "Svc4"]);
+    expect(ComplianceAgent.parseExtensionResponse(JSON.stringify({ extensions: [] })))
+      .toEqual({ extensions: [], plannedImplemented: [], notReported: [] });
   });
 
   it("accepts the legacy single-extension shape", () => {
-    const exts = ComplianceAgent.parseExtensionResponse(JSON.stringify({
+    const { extensions } = ComplianceAgent.parseExtensionResponse(JSON.stringify({
       extensionDetected: true, extension: { name: "EventBus", responsibility: "pub/sub", technology: "Kafka", rationale: "new" },
     }));
-    expect(exts).toEqual([{ name: "EventBus", responsibility: "pub/sub", technology: "Kafka", rationale: "new" }]);
+    expect(extensions).toEqual([{ name: "EventBus", responsibility: "pub/sub", technology: "Kafka", rationale: "new" }]);
+  });
+
+  describe("planned vs implemented components (D13)", () => {
+    const components: ArchComponent[] = [
+      { name: "Frontend", responsibility: "UI, including notifications", status: "planned" },
+      IMPLEMENTED_API,
+      { name: "Search", responsibility: "Full-text search" }, // no status (older arch.json) = planned
+    ];
+
+    it("sorts the answer into planned matches, extensions and checked files", () => {
+      const r = ComplianceAgent.parseExtensionResponse(JSON.stringify({
+        plannedImplemented: [{ component: "frontend", files: ["app.tsx"], rationale: "a React UI" }],
+        extensions: [{ name: "Notifications", responsibility: "browser notifications", rationale: "standalone", files: ["notifications.ts"] }],
+        notReported: [{ file: "hello.py", reason: "trivial script" }, { file: "app.tsx", reason: "dup of a reported file" }],
+      }), components);
+      expect(r.plannedImplemented).toEqual([{ component: "Frontend", files: ["app.tsx"], rationale: "a React UI" }]);
+      expect(r.extensions).toEqual([{ name: "Notifications", responsibility: "browser notifications", rationale: "standalone", files: ["notifications.ts"] }]);
+      expect(r.notReported).toEqual([{ file: "hello.py", reason: "trivial script" }]);
+    });
+
+    it("an 'extension' named after a planned component is that component appearing in code", () => {
+      const r = ComplianceAgent.parseExtensionResponse(JSON.stringify({
+        extensions: [{ name: "Search", responsibility: "r", rationale: "why", files: ["search.ts"] }],
+      }), components);
+      expect(r.extensions).toEqual([]);
+      expect(r.plannedImplemented).toEqual([{ component: "Search", files: ["search.ts"], rationale: "why" }]);
+    });
+
+    it("a planned match must name a component that is still planned", () => {
+      const r = ComplianceAgent.parseExtensionResponse(JSON.stringify({
+        plannedImplemented: [
+          { component: "ApiServer", files: ["x.ts"], rationale: "already implemented" },
+          { component: "Billing", files: ["b.ts"], rationale: "not in the blueprint" },
+        ],
+      }), components);
+      expect(r.plannedImplemented).toEqual([]);
+    });
+
+    it("the Pass 2 prompt tells the model each component's status and files", () => {
+      const prompt = buildExtensionDetectionPrompt(diffSummary(), blueprint({ components }));
+      expect(prompt).toContain("- Frontend [PLANNED, no code yet]: UI, including notifications");
+      expect(prompt).toContain("- ApiServer [IMPLEMENTED in server.ts]: Serves the REST API");
+      expect(prompt).toContain("- Search [PLANNED, no code yet]");
+    });
   });
 
   it("check() reports which ADRs were used as context", async () => {

@@ -198,6 +198,30 @@
     .item-done.muted { opacity: 0.7; background: transparent; padding-left: 0; }
     .resolved .violation-header, .resolved .ext-card-header { opacity: 0.6; }
     .footer { margin-top: 26px; display: flex; gap: 12px; align-items: center; }
+
+    .ext-badge.planned { background: rgba(76,175,80,0.15); color: var(--vscode-testing-iconPassed, #4caf50); }
+    .ext-files { font-family: var(--vscode-editor-font-family); font-size: 11px; opacity: 0.8; }
+    input[type="text"] {
+      width: 100%; background: var(--vscode-input-background); color: var(--vscode-input-foreground);
+      border: 1px solid var(--vscode-input-border); border-radius: 3px;
+      padding: 6px 10px; font-family: inherit; font-size: 12px; outline: none; margin-bottom: 8px;
+    }
+    input[type="text"]:focus { border-color: var(--vscode-focusBorder); }
+    .form-label { display: block; font-size: 11px; font-weight: 600; opacity: 0.7; margin-bottom: 3px; }
+    .component-form { margin-top: 12px; }
+
+    /* Added files Pass 2 looked at and did not report, with its reason */
+    .checked { margin-top: 22px; }
+    .checked summary { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--vscode-descriptionForeground); }
+    .checked-item { padding: 9px 0; border-bottom: 1px dashed var(--vscode-panel-border, var(--vscode-input-border)); font-size: 12px; }
+    .checked-item:last-child { border-bottom: none; }
+    .checked-file { font-family: var(--vscode-editor-font-family); font-size: 11px; font-weight: 600; }
+    .checked-reason { color: var(--vscode-descriptionForeground); margin: 2px 0 6px; line-height: 1.5; }
+    .link-btn {
+      padding: 0; border: none; background: none; cursor: pointer; font-family: inherit; font-size: 11px;
+      color: var(--vscode-textLink-foreground);
+    }
+    .link-btn:hover { background: none; text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -229,6 +253,7 @@
       <p>Changes are consistent with your architecture and ADRs.</p>
     </div>
     <div id="diff-summary-clean"></div>
+    <div id="checked-clean"></div>
   </div>
 
   <!-- Results: violations and/or extensions, each resolved individually -->
@@ -246,6 +271,15 @@
       <div id="violation-list"></div>
     </div>
 
+    <div id="planned-section" class="hidden">
+      <div class="section-title">
+        <h3 style="margin:0">Planned components now in code</h3>
+        <span class="count-pill" id="planned-count"></span>
+      </div>
+      <p class="subtitle" style="margin-bottom:12px">ARCH.md lists these as planned, and code for them appeared. Marking one implemented updates ARCH.md without an ADR, since it was already decided. If the code is really something else, register it as a new component instead.</p>
+      <div id="planned-list"></div>
+    </div>
+
     <div id="extensions-section" class="hidden">
       <div class="section-title">
         <h3 style="margin:0">New components</h3>
@@ -254,6 +288,8 @@
       <p class="subtitle" style="margin-bottom:12px">Structural elements not present in ARCH.md. Registering one creates its own ADR and adds it to ARCH.md. Dismissing records nothing.</p>
       <div id="extension-list"></div>
     </div>
+
+    <div id="checked-results"></div>
 
     <div class="footer">
       <button class="btn-secondary" id="btn-rerun">Re-run review</button>
@@ -274,7 +310,9 @@
   const vscode = acquireVsCodeApi();
   let violations = [];
   let extensions = [];
-  let open = 0; // items not yet resolved or dismissed
+  let planned = [];  // planned components whose code appeared
+  let checked = [];  // added files Pass 2 did not report, with its reason
+  let open = 0; // items not yet resolved or dismissed (checked files are informational, not counted)
 
   const allScreens = ['screen-checking','screen-no-diff','screen-clean','screen-results','screen-error'];
   function showScreen(id) {
@@ -314,7 +352,7 @@
   function violationCard(v, i) {
     const raw = String(v.severity || '').toLowerCase();
     const sev = ['high', 'medium', 'low'].includes(raw) ? raw : 'medium';
-    return `<div class="violation-card ${sev}" id="violation-${i}">
+    return `<div class="violation-card ${sev}" id="violation-${i}" data-open="1">
       <div class="violation-header">
         <span class="severity-badge badge-${sev}">${sev.toUpperCase()}</span>
         <span class="constraint-ref">${esc(v.constraintId)}</span>
@@ -336,13 +374,14 @@
   }
 
   function extensionCard(e, i, alsoViolations) {
-    return `<div class="ext-card" id="extension-${i}">
+    return `<div class="ext-card" id="extension-${i}" data-open="1">
       <div class="ext-card-header">
         <span class="ext-badge">NEW COMPONENT</span>
         <span class="ext-name">${esc(e.name)}</span>
       </div>
       <div class="ext-detail-row"><span class="ext-detail-label">Responsibility</span><span>${esc(e.responsibility)}</span></div>
       ${e.technology ? `<div class="ext-detail-row"><span class="ext-detail-label">Technology</span><span>${esc(e.technology)}</span></div>` : ''}
+      ${e.files && e.files.length ? `<div class="ext-detail-row"><span class="ext-detail-label">Code</span><span class="ext-files">${e.files.map(esc).join(', ')}</span></div>` : ''}
       <div class="ext-rationale-row"><span class="ext-detail-label">Why detected</span><span>${esc(e.rationale)}</span></div>
       <div class="item-resolution" data-body>
         ${alsoViolations ? `<p class="item-warning">Detected in code that also has violations. If you revise that code, this component may no longer apply.</p>` : ''}
@@ -353,6 +392,63 @@
         </div>
         <div class="item-error hidden" data-error></div>
       </div>
+    </div>`;
+  }
+
+  // A planned component whose code appeared: mark it implemented (no ADR), or say it's something new.
+  function plannedCard(p, i) {
+    return `<div class="ext-card" id="planned-${i}" data-open="1">
+      <div class="ext-card-header">
+        <span class="ext-badge planned">PLANNED → IN CODE</span>
+        <span class="ext-name">${esc(p.component)}</span>
+      </div>
+      ${p.files.length ? `<div class="ext-detail-row"><span class="ext-detail-label">Code</span><span class="ext-files">${p.files.map(esc).join(', ')}</span></div>` : ''}
+      <div class="ext-rationale-row"><span class="ext-detail-label">Why matched</span><span>${esc(p.rationale)}</span></div>
+      <div class="item-resolution" data-body>
+        <div class="btn-row" data-choices>
+          <button data-action="implement" data-index="${i}">Mark as Implemented</button>
+          <button class="btn-secondary" data-action="showForm" data-kind="planned" data-index="${i}">It's a New Component Instead</button>
+        </div>
+        ${componentForm('planned', i, p.files[0])}
+        <div class="item-error hidden" data-error></div>
+      </div>
+    </div>`;
+  }
+
+  // The added files Pass 2 looked at and did not report, each with its reason and an override.
+  function checkedHtml() {
+    if (!checked.length) return '';
+    const items = checked.map((c, i) => `<div class="checked-item" id="checked-${i}">
+      <div class="checked-file">${esc(c.file)}</div>
+      <div class="checked-reason">${esc(c.reason || 'Not a new component.')}</div>
+      <div data-body>
+        <button class="link-btn" data-action="showForm" data-kind="checked" data-index="${i}" data-choices>Register as new component anyway</button>
+        ${componentForm('checked', i, c.file)}
+        <div class="item-error hidden" data-error></div>
+      </div>
+    </div>`).join('');
+    return `<details class="checked diff-summary">
+      <summary>Checked, not new (${checked.length} file${checked.length !== 1 ? 's' : ''})</summary>
+      <div class="diff-summary-content">${items}</div>
+    </details>`;
+  }
+
+  // "notifications.ts" -> "Notifications": a starting point for the component's name.
+  function nameFromFile(file) {
+    const base = String(file || '').split(/[\\/]/).pop().replace(/\.[^.]+$/, '');
+    return base.split(/[-_.\s]+/).filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
+  }
+
+  function componentForm(kind, i, file) {
+    return `<div class="component-form hidden" data-form>
+      <label class="form-label">Component name</label>
+      <input type="text" data-field="name" value="${esc(nameFromFile(file))}">
+      <label class="form-label">Responsibility</label>
+      <input type="text" data-field="responsibility" placeholder="What this component does">
+      <label class="form-label">Technology (optional)</label>
+      <input type="text" data-field="technology">
+      <textarea data-reasoning placeholder="Why is this a new component? Context for the ADR (optional)…"></textarea>
+      <button data-action="registerCustom" data-kind="${kind}" data-index="${i}">Register as New Component</button>
     </div>`;
   }
 
@@ -377,8 +473,7 @@
     done.textContent = text;
     const body = card.querySelector('[data-body]');
     body.replaceChildren(done);
-    open -= 1;
-    updateFooter();
+    if (card.dataset.open === '1') { open -= 1; updateFooter(); }
   }
 
   function updateFooter() {
@@ -420,6 +515,43 @@
 
     if (action === 'dismiss') {
       markDone(cardFor('extension', index), 'Dismissed. Nothing recorded.', 'muted');
+    }
+
+    if (action === 'implement') {
+      const card = cardFor('planned', index);
+      showItemError(card, '');
+      setBusy(card, true);
+      vscode.postMessage({ command: 'markImplemented', kind: 'planned', index, match: planned[index] });
+    }
+
+    if (action === 'showForm') {
+      const card = cardFor(btn.dataset.kind, index);
+      card.querySelector('[data-choices]').classList.add('hidden');
+      card.querySelector('[data-form]').classList.remove('hidden');
+      card.querySelector('[data-field="responsibility"]').focus();
+    }
+
+    // A planned match or a checked file, registered as an extension with the developer's details.
+    if (action === 'registerCustom') {
+      const kind = btn.dataset.kind;
+      const card = cardFor(kind, index);
+      const field = (f) => card.querySelector(`[data-field="${f}"]`).value.trim();
+      const name = field('name'), responsibility = field('responsibility'), technology = field('technology');
+      if (!name || !responsibility) { showItemError(card, 'A new component needs a name and a responsibility.'); return; }
+      const source = kind === 'planned' ? planned[index] : checked[index];
+      const extension = {
+        name, responsibility, ...(technology ? { technology } : {}),
+        files: kind === 'planned' ? source.files : [source.file],
+        rationale: kind === 'planned'
+          ? `Registered by the developer as a new component; BluePrint had matched it to the planned component "${source.component}".`
+          : `Registered by the developer as a new component; BluePrint had not reported it (${source.reason || 'no reason given'}).`,
+      };
+      showItemError(card, '');
+      setBusy(card, true);
+      vscode.postMessage({
+        command: 'confirmExtension', kind, index, extension,
+        reasoning: card.querySelector('[data-reasoning]').value.trim(),
+      });
     }
   });
 
@@ -466,17 +598,23 @@
         const { result, diffSummary } = msg;
         violations = result.violations || [];
         extensions = result.extensions || [];
+        planned    = result.plannedImplemented || [];
+        checked    = result.notReported || [];
         const diffHtml = diffSummary ? buildDiffHtml(diffSummary) : '';
+        document.getElementById('checked-clean').innerHTML = '';
+        document.getElementById('checked-results').innerHTML = '';
 
-        if (!violations.length && !extensions.length) {
+        if (!violations.length && !extensions.length && !planned.length) {
           document.getElementById('diff-summary-clean').innerHTML = diffHtml;
+          document.getElementById('checked-clean').innerHTML = checkedHtml();
           showScreen('screen-clean');
           break;
         }
 
-        open = violations.length + extensions.length;
+        open = violations.length + extensions.length + planned.length;
         const parts = [];
         if (violations.length) parts.push(`${violations.length} violation${violations.length !== 1 ? 's' : ''}`);
+        if (planned.length) parts.push(`${planned.length} planned component${planned.length !== 1 ? 's' : ''} now in code`);
         if (extensions.length) parts.push(`${extensions.length} new component${extensions.length !== 1 ? 's' : ''}`);
         document.getElementById('results-subtitle').textContent = `Found ${parts.join(' and ')}. Handle each one below.`;
         document.getElementById('diff-summary-results').innerHTML = diffHtml;
@@ -489,6 +627,11 @@
         document.getElementById('extensions-count').textContent = String(extensions.length);
         document.getElementById('extension-list').innerHTML =
           extensions.map((e, i) => extensionCard(e, i, violations.length > 0)).join('');
+
+        document.getElementById('planned-section').classList.toggle('hidden', !planned.length);
+        document.getElementById('planned-count').textContent = String(planned.length);
+        document.getElementById('planned-list').innerHTML = planned.map(plannedCard).join('');
+        document.getElementById('checked-results').innerHTML = checkedHtml();
 
         updateFooter();
         showScreen('screen-results');

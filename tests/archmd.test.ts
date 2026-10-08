@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
-import { addComponentRow, addConstraint, replaceConstraint, setLastUpdated } from "../src/storage/archPatch";
+import { addComponentRow, addConstraint, replaceConstraint, setComponentStatus, setLastUpdated } from "../src/storage/archPatch";
 import { splitSections, recentHighlights, WHOLE_DOCUMENT } from "../src/ui/archView";
 import { FileStore, ArchHistoryEntry } from "../src/storage/FileStore";
 import { renderArchMd } from "../src/prompts/archPrompts";
@@ -9,15 +9,47 @@ import { Uri } from "./mocks/vscode";
 import { blueprint, tempDir, removeDir } from "./helpers";
 
 const DOC = renderArchMd(blueprint(), "Shop");
+// An ARCH.md written before components had a status.
+const OLD_TABLE_DOC = DOC
+  .replace("| Component | Responsibility | Technology | Status |\n|---|---|---|---|", "| Component | Responsibility | Technology |\n|---|---|---|")
+  .replace("| ApiServer | Serves the REST API | Express | Planned |", "| ApiServer | Serves the REST API | Express |");
 
 describe("archPatch — targeted edits that preserve manual changes (SRS 2.2)", () => {
   it("adds a component row and leaves everything else byte-for-byte", () => {
     const manual = DOC.replace("## Data Flow", "## Data Flow\n\nHand-written note the agent must keep.");
     const r = addComponentRow(manual, { name: "Cache", responsibility: "Caches reads", technology: "Redis" });
     expect(r.touched).toEqual(["Components"]);
-    expect(r.markdown).toContain("| Cache | Caches reads | Redis |");
+    expect(r.markdown).toContain("| Cache | Caches reads | Redis | Planned |");
     expect(r.markdown).toContain("Hand-written note the agent must keep.");
-    expect(r.markdown.replace("| Cache | Caches reads | Redis |\n", "")).toBe(manual);
+    expect(r.markdown.replace("| Cache | Caches reads | Redis | Planned |\n", "")).toBe(manual);
+  });
+
+  it("an implemented component's Status cell names its files (first three)", () => {
+    const r = addComponentRow(DOC, {
+      name: "Mailer", responsibility: "Sends email", status: "implemented", files: ["a.ts", "b.ts", "c.ts", "d.ts"],
+    });
+    expect(r.markdown).toContain("| Mailer | Sends email | — | Implemented — `a.ts`, `b.ts`, `c.ts`, +1 more |");
+  });
+
+  it("an older table without a Status column gets one, every existing row marked Planned", () => {
+    const old = OLD_TABLE_DOC;
+    const r = addComponentRow(old, { name: "Mailer", responsibility: "Sends email", status: "implemented", files: ["mail.ts"] });
+    expect(r.markdown).toContain("| Component | Responsibility | Technology | Status |\n|---|---|---|---|");
+    expect(r.markdown).toContain("| ApiServer | Serves the REST API | Express | Planned |");
+    expect(r.markdown).toContain("| Mailer | Sends email | — | Implemented — `mail.ts` |");
+    // Nothing outside the table changed.
+    expect(r.markdown.replace(/## Components[\s\S]*?(?=## Data Flow)/, "")).toBe(old.replace(/## Components[\s\S]*?(?=## Data Flow)/, ""));
+  });
+
+  it("setComponentStatus marks a planned component implemented, upgrading an older table", () => {
+    const r = setComponentStatus(OLD_TABLE_DOC, { name: "apiserver", responsibility: "x", status: "implemented", files: ["server.ts"] });
+    expect(r.touched).toEqual(["Components"]);
+    expect(r.markdown).toContain("| ApiServer | Serves the REST API | Express | Implemented — `server.ts` |");
+    // Already in that state: a no-op.
+    expect(setComponentStatus(r.markdown, { name: "ApiServer", responsibility: "x", status: "implemented", files: ["server.ts"] }).touched).toEqual([]);
+    // A component whose row was removed by hand gets one.
+    expect(setComponentStatus(DOC, { name: "Mailer", responsibility: "Sends email", status: "implemented" }).markdown)
+      .toContain("| Mailer | Sends email | — | Implemented |");
   });
 
   it("is a no-op for a component that is already listed (case-insensitive)", () => {
@@ -26,16 +58,16 @@ describe("archPatch — targeted edits that preserve manual changes (SRS 2.2)", 
   });
 
   it("matches a manually widened table and escapes pipes", () => {
-    const wide = DOC.replace("| Component | Responsibility | Technology |\n|---|---|---|", "| Component | Responsibility | Technology | Owner |\n|---|---|---|---|")
-                    .replace("| ApiServer | Serves the REST API | Express |", "| ApiServer | Serves the REST API | Express | Team A |");
+    const wide = DOC.replace("| Component | Responsibility | Technology | Status |\n|---|---|---|---|", "| Component | Responsibility | Technology | Status | Owner |\n|---|---|---|---|---|")
+                    .replace("| ApiServer | Serves the REST API | Express | Planned |", "| ApiServer | Serves the REST API | Express | Planned | Team A |");
     const r = addComponentRow(wide, { name: "Queue", responsibility: "a | b" });
-    expect(r.markdown).toContain("| Queue | a \\| b | — | — |");
+    expect(r.markdown).toContain("| Queue | a \\| b | — | Planned | — |");
   });
 
   it("creates the Components section when it was deleted", () => {
     const noComponents = DOC.replace(/## Components[\s\S]*?(?=## Data Flow)/, "");
     const r = addComponentRow(noComponents, { name: "Cache", responsibility: "r" });
-    expect(r.markdown).toMatch(/## Components\n\n\| Component \| Responsibility \| Technology \|\n\|---\|---\|---\|\n\| Cache \| r \| — \|/);
+    expect(r.markdown).toMatch(/## Components\n\n\| Component \| Responsibility \| Technology \| Status \|\n\|---\|---\|---\|---\|\n\| Cache \| r \| — \| Planned \|/);
   });
 
   it("adds constraints, replacing the placeholder, without duplicates", () => {

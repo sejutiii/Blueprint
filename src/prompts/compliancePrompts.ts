@@ -1,4 +1,4 @@
-import { ADR, ArchBlueprint, DiffSummary } from "../types";
+import { ADR, ArchBlueprint, DiffSummary, componentStatus } from "../types";
 
 export const MAX_EXTENSIONS = 5;
 
@@ -31,33 +31,40 @@ ${diff.rawDiff}`
     : "");
 }
 
-export const EXTENSION_DETECTION_SYSTEM_PROMPT = `You are an architectural extension detector. Examine code changes against an existing architecture blueprint to determine whether the code introduces genuinely new structural elements (components, services, layers, or subsystems) that do not exist in the current architecture.
+export const EXTENSION_DETECTION_SYSTEM_PROMPT = `You are an architectural extension detector. Compare code changes with the project's architecture blueprint. Each blueprint component is either IMPLEMENTED (its code exists, files listed) or PLANNED (described, but no code for it exists yet).
+
+Sort the new code into three groups:
+1. "plannedImplemented": the new code IS a PLANNED component — it carries out that component's main responsibility (e.g. a UI application for a planned "Frontend", a payment client for a planned "Payment Service").
+2. "extensions": the new code introduces an element with its own responsibility that is neither an IMPLEMENTED nor a PLANNED component.
+3. "notReported": everything else — code that belongs to an IMPLEMENTED component, trivial scripts, configuration, documentation.
 
 Respond with ONLY valid JSON. No markdown, no code fences.
-
-If no new structural element is detected:
-{ "extensions": [] }
-
-If one or more new structural elements are detected, list each one separately:
 {
+  "plannedImplemented": [
+    { "component": "Exact name of a PLANNED component", "files": ["path"], "rationale": "Why this code is that component (1 sentence)" }
+  ],
   "extensions": [
     {
       "name": "ComponentName",
       "responsibility": "What this new element does (1-2 sentences)",
       "technology": "Technology used, if discernible from the diff",
-      "rationale": "Why you believe this is a new structural element absent from ARCH.md (1-2 sentences)"
+      "rationale": "Why this is a new element absent from the blueprint (1-2 sentences)",
+      "files": ["path"]
     }
+  ],
+  "notReported": [
+    { "file": "path", "reason": "Why it is not a new or planned component (1 sentence)" }
   ]
 }
 
 Rules:
-- Report an extension if the code introduces a new file, class, or module that has a distinct responsibility not covered by any existing component in ARCH.md. Added files are the usual source; modified files are existing code and only count if they gain a clearly separate responsibility.
-- Report each distinct new element as its own entry. Do not merge unrelated elements into one; do not split one element across several entries.
-- Report at most ${MAX_EXTENSIONS} extensions, most significant first.
-- Do NOT report: adding methods or routes to an existing component, refactoring within an existing component's responsibility, or utility/helper files with no architectural significance.
-- Do NOT report: things already covered by an existing component's responsibility in ARCH.md.
-- Omit the "technology" field if it cannot be clearly inferred.
-- Lean toward reporting an extension if a new file introduces a self-contained, named concept that clearly sits outside the existing component list.`;
+- Every ADDED file appears exactly once: in a plannedImplemented entry's files, in an extension's files, or in notReported. Modified files appear only if they gain a clearly separate responsibility.
+- A PLANNED component counts as implemented only if the code IS that component as a whole. One capability that a broader planned component merely mentions, built as its own module, is NOT that component: report it as an extension. Example: a planned "Backend API" whose responsibility mentions sending emails is not implemented by a standalone email-sending module; that module is an extension. When unsure between plannedImplemented and an extension, choose the extension.
+- Judge an element by the domain concept it introduces, not by how much code it has: a file named for a business or technical capability that is in no component (e.g. payment.py in a PDF tool) is an extension even if its body is only a placeholder or a print statement.
+- Never report as an extension a file whose name carries no domain concept: hello-world, scratch, test, demo or example files, configuration, documentation, or generic helpers (utils, main, index). They go in notReported.
+- Code that extends an IMPLEMENTED component (new methods, routes, helpers next to its files) is notReported, with that component named in the reason.
+- Report each distinct new element as its own extension. Do not merge unrelated elements; do not split one element across several entries. At most ${MAX_EXTENSIONS} extensions, most significant first.
+- Use the exact component names from the blueprint. Omit "technology" if it cannot be clearly inferred. Use empty arrays for empty groups.`;
 
 export function buildExtensionDetectionPrompt(
   diffSummary: DiffSummary,
@@ -65,16 +72,21 @@ export function buildExtensionDetectionPrompt(
 ): string {
   const components = blueprint.components.length
     ? blueprint.components
-        .map((c) => `- ${c.name}: ${c.responsibility}${c.technology ? ` (${c.technology})` : ""}`)
+        .map((c) => {
+          const status = componentStatus(c) === "implemented"
+            ? `IMPLEMENTED${c.files?.length ? ` in ${c.files.join(", ")}` : ""}`
+            : "PLANNED, no code yet";
+          return `- ${c.name} [${status}]: ${c.responsibility}${c.technology ? ` (${c.technology})` : ""}`;
+        })
         .join("\n")
     : "No components defined.";
 
-  return `EXISTING ARCHITECTURE COMPONENTS:
+  return `ARCHITECTURE COMPONENTS:
 ${components}
 
 ${describeChanges(diffSummary)}
 
-Does this code introduce new structural elements not present in the architecture above? List each one.`;
+Sort the new code into plannedImplemented, extensions and notReported.`;
 }
 
 export const COMPLIANCE_SYSTEM_PROMPT = `You are an architectural compliance reviewer. Your job is to check whether code changes violate existing architectural decisions or constraints.

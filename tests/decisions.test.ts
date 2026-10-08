@@ -138,6 +138,57 @@ describe("Orchestrator — Architect-only actions", () => {
   });
 });
 
+describe("D13 — planned components that appear in code, and extensions", () => {
+  let dir: string;
+  let identity: string | null;
+  const orchestrator = new Orchestrator({} as never, { onState: () => {}, onDataChanged: () => {} });
+  const file = (...p: string[]) => fs.readFileSync(path.join(dir, ...p), "utf8");
+  const writeRoles = (m: object) => {
+    fs.mkdirSync(path.join(dir, ".blueprint"), { recursive: true });
+    fs.writeFileSync(path.join(dir, ".blueprint", "roles.json"), JSON.stringify(m));
+  };
+
+  beforeEach(async () => {
+    dir = tempDir();
+    __setWorkspaceRoot(dir);
+    identity = "lead@x.io";
+    vi.spyOn(AccessControl.prototype, "resolveIdentity").mockImplementation(async () => identity);
+    vi.spyOn(EmbeddingService.prototype, "embed").mockResolvedValue(null);
+    await new FileStore(Uri.file(dir) as never).writeArchBlueprint(blueprint({ components: [
+      { name: "Frontend", responsibility: "UI", status: "planned" },
+    ] }), "Shop");
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    __setWorkspaceRoot(null);
+    removeDir(dir);
+  });
+
+  it("marking a planned component implemented updates ARCH.md and arch.json, with no ADR", async () => {
+    // Open to Developers too: it records a fact about the code, not a decision.
+    writeRoles({ architects: ["lead@x.io"], developers: ["dev@x.io"] });
+    identity = "dev@x.io";
+    await orchestrator.markComponentImplemented({ component: "Frontend", files: ["app.tsx"], rationale: "a React UI" });
+
+    expect(file("docs", "ARCH.md")).toContain("| Frontend | UI | — | Implemented — `app.tsx` |");
+    expect(JSON.parse(file(".blueprint", "arch.json")).components[0]).toMatchObject({ status: "implemented", files: ["app.tsx"] });
+    expect(await new AdrStore(Uri.file(dir) as never).getAll()).toEqual([]);
+    const [h] = await new FileStore(Uri.file(dir) as never).getHistory();
+    expect(h.reason).toBe("Component implemented: Frontend"); // revertible
+    const entries = await new AuditLog(Uri.file(dir) as never).getAll();
+    expect(entries.at(-1)).toMatchObject({ eventType: "component_implemented", actor: "dev@x.io", changedFiles: ["app.tsx"] });
+  });
+
+  it("an extension is recorded as implemented, with only its own files", async () => {
+    const { adr } = await orchestrator.confirmExtension(
+      { name: "Notifications", responsibility: "Browser notifications", rationale: "new", files: ["notifications.ts"] },
+      "", ["notifications.ts", "unrelated.py"]
+    );
+    expect(adr.archEffect).toMatchObject({ kind: "add-component", component: { status: "implemented", files: ["notifications.ts"] } });
+    expect(file("docs", "ARCH.md")).toContain("| Notifications | Browser notifications | — | Implemented — `notifications.ts` |");
+  });
+});
+
 describe("Add Decision — replacing an existing decision", () => {
   let dir: string;
   let identity: string | null;

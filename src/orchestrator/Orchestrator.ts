@@ -17,8 +17,10 @@ import { DecisionService, ProposeResult } from "../services/DecisionService";
 import { buildCodebaseSnapshot } from "../parsing/CodebaseSnapshot";
 import { renderArchMd } from "../prompts/archPrompts";
 import {
-  ADR, ArchBlueprint, ArchEffect, ComplianceResult, DiffSummary, ExtensionDetail, OrchestratorEvent, ViolationDetail,
+  ADR, ArchBlueprint, ArchEffect, ComplianceResult, DiffSummary, ExtensionDetail, OrchestratorEvent,
+  PlannedComponentMatch, ViolationDetail,
 } from "../types";
+import { MAX_COMPONENT_FILES } from "../storage/archPatch";
 
 /** A failure with a message meant to be shown to the developer verbatim. */
 export class BlueprintError extends Error {}
@@ -192,7 +194,7 @@ export class Orchestrator {
       const old = await adrStore.getById(supersedes);
       const oldEffect = old?.archEffect;
       // The old ADR's constraint line: what its own effect added, or failing that its title.
-      const replaces = oldEffect && oldEffect.kind !== "add-component" ? oldEffect.constraint : old?.title ?? "";
+      const replaces = oldEffect && "constraint" in oldEffect ? oldEffect.constraint : old?.title ?? "";
       archEffect = { kind: "replace-constraint", constraint: draft.title, replaces };
     }
     const result = await decisions.propose({
@@ -272,11 +274,14 @@ export class Orchestrator {
 
       // The two passes are independent judgments, so they run in parallel; violations and
       // extensions are reported together and each is resolved (and recorded) on its own.
-      const [pass1, extensions] = await Promise.all([
+      const [pass1, pass2] = await Promise.all([
         mode !== "extensions" ? runPass1() : Promise.resolve({ violation: false, violations: [], adrsUsed: [] }),
-        mode !== "violations" ? agent.detectExtensions(diffSummary, ws.blueprint) : Promise.resolve([]),
+        mode !== "violations"
+          ? agent.detectExtensions(diffSummary, ws.blueprint)
+          : Promise.resolve({ extensions: [], plannedImplemented: [], notReported: [] }),
       ]);
-      const result: ComplianceResult = { ...pass1, extensions };
+      const { extensions } = pass2;
+      const result: ComplianceResult = { ...pass1, ...pass2 };
 
       if (mode !== "extensions") {
         await ws.audit?.append({
@@ -341,12 +346,18 @@ Location: ${violation.affectedCodeLocation}` : "";
     return result;
   }
 
+  /**
+   * An extension: a component that was neither planned nor implemented. One ADR (through the
+   * approval queue), and on approval an ARCH.md row marked implemented with its files.
+   */
   async confirmExtension(
     ext: ExtensionDetail,
     reasoning: string,
     changedFiles: string[] = []
   ): Promise<ProposeResult> {
     const { decisions } = this.workspace();
+    // Only the files the model tied to this element: the whole diff may hold unrelated changes.
+    const files = (ext.files ?? []).slice(0, MAX_COMPONENT_FILES);
     const result = await decisions.propose({
       title:        `Extension: Add ${ext.name} component`,
       context:      ext.rationale,
@@ -359,12 +370,34 @@ Location: ${violation.affectedCodeLocation}` : "";
         component: {
           name: ext.name, responsibility: ext.responsibility,
           ...(ext.technology ? { technology: ext.technology } : {}),
+          status: "implemented", files,
         },
       },
       changedFiles,
     });
     this.hooks.onDataChanged();
     return result;
+  }
+
+  /**
+   * A planned component now exists in the code. It was decided when it was planned, so no ADR:
+   * ARCH.md and arch.json mark it implemented with its files (snapshot first, so it can be
+   * reverted) and the audit trail records who did it. Open to every role: it records a fact.
+   */
+  async markComponentImplemented(match: PlannedComponentMatch): Promise<void> {
+    const { fileStore, audit, access } = this.workspace();
+    const files = match.files.slice(0, MAX_COMPONENT_FILES);
+    await fileStore.applyArchEffect(
+      { kind: "mark-implemented", component: match.component, files },
+      `Component implemented: ${match.component}`
+    );
+    await audit?.append({
+      eventType:    "component_implemented",
+      summary:      `Planned component "${match.component}" is now implemented${files.length ? ` (${files.join(", ")})` : ""}`,
+      actor:        (await access.resolveIdentity()) ?? undefined,
+      changedFiles: files,
+    });
+    this.hooks.onDataChanged();
   }
 
   // ── Living ARCH.md: regenerate from the codebase (Architect-only) ─────────

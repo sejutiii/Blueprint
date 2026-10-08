@@ -15,7 +15,7 @@ import { ConstraintElicitationAgent } from "./agents/ConstraintElicitationAgent"
 import { DraftToShow, ElicitationSession, WizardQuestion } from "./agents/ElicitationSession";
 import { ConstraintDraft } from "./prompts/constraintPrompts";
 import { adrFilename } from "./prompts/adrPrompts";
-import { ViolationDetail, ExtensionDetail, ADR, AuditEntry, DiffSummary } from "./types";
+import { ViolationDetail, ExtensionDetail, ADR, AuditEntry, DiffSummary, PlannedComponentMatch } from "./types";
 import { configureTreeSitter } from "./parsing/TreeSitterExtractor";
 import { configureEmbeddings } from "./embeddings/EmbeddingService";
 import { splitSections, recentHighlights, RECENT_CHANGES } from "./ui/archView";
@@ -506,7 +506,10 @@ function savedMessage(adrId: string, autoApproved: boolean, archNote: string): s
 // Replies carry the item's kind + index so the webview can mark that card as done.
 function setCompliancePanelHandler(panel: BlueprintPanel): void {
   panel.setMessageHandler(async (message) => {
-    const kind  = message.command === "confirmExtension" ? "extension" : "violation";
+    // Which card to update: the webview says so for extensions (a detected one, a planned match
+    // registered as new instead, or a checked file registered anyway); violations are implied.
+    const kind  = typeof message.kind === "string" ? message.kind
+      : message.command === "confirmExtension" ? "extension" : "violation";
     const index = message.index as number;
     try {
       switch (message.command) {
@@ -541,6 +544,16 @@ function setCompliancePanelHandler(panel: BlueprintPanel): void {
           panel.postMessage({
             command: "itemResolved", kind, index, adrId: result.adr.id, pending: !result.autoApproved,
             message: savedMessage(result.adr.id, result.autoApproved, "ARCH.md now lists the new component."),
+          });
+          break;
+        }
+
+        case "markImplemented": {
+          const match = message.match as PlannedComponentMatch;
+          await orchestrator.markComponentImplemented(match);
+          panel.postMessage({
+            command: "itemResolved", kind, index,
+            message: `ARCH.md now lists "${match.component}" as implemented. No ADR: it was already planned.`,
           });
           break;
         }

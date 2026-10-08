@@ -5,6 +5,7 @@ import {
   ARCH_FROM_CODE_SYSTEM_PROMPT, buildArchFromCodePrompt,
 } from "../prompts/archPrompts";
 import { parseJsonObject, str, strArray, objectArray } from "../util/llmJson";
+import { MAX_COMPONENT_FILES } from "../storage/archPatch";
 
 export class ArchitectureAgent {
   constructor(private readonly llm: LLMClient) {}
@@ -14,7 +15,11 @@ export class ArchitectureAgent {
       ARCH_GENERATION_SYSTEM_PROMPT,
       buildArchGenerationPrompt(systemDescription)
     );
-    return { ...ArchitectureAgent.parseResponse(raw), lastUpdated: new Date().toISOString() };
+    const blueprint = ArchitectureAgent.parseResponse(raw);
+    // Built from a description, not from code: every component starts as planned. A review marks
+    // one implemented when code for it appears (or Regenerate finds it in the codebase).
+    const components = blueprint.components.map(({ files: _files, ...c }) => ({ ...c, status: "planned" as const }));
+    return { ...blueprint, components, lastUpdated: new Date().toISOString() };
   }
 
   /**
@@ -25,8 +30,18 @@ export class ArchitectureAgent {
   async regenerateFromCodebase(current: ArchBlueprint, snapshot: string): Promise<ArchBlueprint> {
     const raw = await this.llm.complete(ARCH_FROM_CODE_SYSTEM_PROMPT, buildArchFromCodePrompt(current, snapshot));
     const next = ArchitectureAgent.parseResponse(raw);
+    // A status the model left out keeps the component's current one (planned if it is new).
+    const before = new Map(current.components.map((c) => [c.name.toLowerCase(), c]));
+    const components = next.components.map((c) => {
+      if (c.status) { return c.status === "planned" ? { ...c, files: undefined } : c; }
+      const old = before.get(c.name.toLowerCase());
+      return old?.status === "implemented"
+        ? { ...c, status: "implemented" as const, files: c.files ?? old.files }
+        : { ...c, status: "planned" as const };
+    });
     return {
       ...next,
+      components,
       constraints: mergeConstraints(current.constraints, next.constraints),
       lastUpdated: new Date().toISOString(),
     };
@@ -48,10 +63,14 @@ export class ArchitectureAgent {
         .filter((c) => str(c.name).trim())
         .map((c) => {
           const technology = str(c.technology).trim();
+          const status = c.status === "implemented" || c.status === "planned" ? c.status : undefined;
+          const files  = strArray(c.files).map((f) => f.trim()).filter(Boolean).slice(0, MAX_COMPONENT_FILES);
           return {
             name:           str(c.name).trim(),
             responsibility: str(c.responsibility),
             ...(technology ? { technology } : {}),
+            ...(status ? { status } : {}),
+            ...(status === "implemented" && files.length ? { files } : {}),
           };
         }),
       dataFlow:      str(obj.dataFlow),
