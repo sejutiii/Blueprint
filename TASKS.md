@@ -2,15 +2,16 @@
 
 ## ▶ Resume here (updated 2026-10-08)
 
-**State.** All work is committed on branch `complete-srs` (`main` is untouched); the only untracked files are the `test/` fixture projects. `npm test` (142 tests) and `npm run typecheck` pass; `npm run build` and `npm run package` work. Phases 1–4 are done except the items below.
+**State.** All work is committed on branch `complete-srs` (`main` is untouched); `test/` is git-ignored. `npm test` (169 tests), `npm run typecheck` and `npm run lint` pass; `npm run build` and `npm run package` work. Phases 1–4 and 3b are done except the items below.
 
 **Next steps, in order**
 1. ~~UI fixes~~ — Phase 3b is complete (U1–U17, 2026-10-08).
-2. **Run the manual checklist** ← *next* in [docs/TESTING.md](docs/TESTING.md) in the Extension Development Host (F5) against the projects in `test/`. *Nothing has been run inside VS Code yet* — expect a few more UI fixes. Fix whatever it finds.
-3. **E6** remaining setting: top-K — present a plan first. (B15 and P3 done 2026-10-08.)
-4. **E5** non-git diff fallback — present a plan first.
-5. **P1** README / LICENSE / `repository` / icon — **open question: which license?** (MIT suggested). Then drop the `--allow-missing-repository --skip-license` flags in `scripts/package.js` (marked TODO).
-6. **P2** update the SRS where behaviour deliberately changed (D1–D8 below; T34 and T49 in particular) and write the project's own ARCH.md.
+2. **Finish the manual checklist** ← *next* in [docs/TESTING.md](docs/TESTING.md) (F5, projects in `test/`). *Partly run* (paused 2026-10-08): the developer tried reviews, the wizard and extension detection, which found M3–M5 (all fixed); no checklist items are ticked yet. Restart the Extension Development Host first so it runs the latest build.
+3. **E6** remaining setting: top-K — present a plan first.
+4. **E5** non-git diff fallback — present a plan first. (Since M3 the panel already says "not a git repository / run git init".)
+5. **P1** README / LICENSE / `repository` / icon — **open question: which license?** (MIT suggested). Then drop the `--allow-missing-repository --skip-license` flags in `scripts/package.js` (marked TODO). Repeat the roles honour-system note in the README (U15).
+6. **P2** update the SRS where behaviour deliberately changed (D1–D13 below; T34 and T49 in particular) and write the project's own ARCH.md (see the `.gitignore` note under P3).
+7. *Optional:* let the developer rename a detected extension before registering it (the model's names vary run to run); **F1** under Future extensions.
 
 **Known unverified / caveats**
 - Linux and macOS VSIXs build but were never run; only Windows x64 embeddings were verified (from the unpacked VSIX).
