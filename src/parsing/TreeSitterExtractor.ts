@@ -111,8 +111,31 @@ function importLine(text: string): string {
 
 // Declaration header: up to the body opener, so "class Foo extends Bar {" → "class Foo extends Bar".
 function header(text: string): string {
-  const first = text.split(/\r?\n/)[0];
-  return oneLine(first.replace(/\s*[{:]\s*$/, "").replace(/\s*\{.*$/, ""));
+  // A parameter list can span several lines; keep reading until its parentheses close.
+  const lines = text.split(/\r?\n/);
+  let head  = lines[0];
+  let depth = parenDepth(head);
+  for (let i = 1; depth > 0 && i < lines.length && i <= MAX_HEADER_LINES; i++) {
+    head  += ` ${lines[i].trim()}`;
+    depth += parenDepth(lines[i]);
+  }
+  return oneLine(cutBody(head).replace(/\s*[{:]\s*$/, ""))
+    .replace(/\(\s+/g, "(")
+    .replace(/,?\s*\)/g, ")");
+}
+
+const MAX_HEADER_LINES = 20;
+const parenDepth = (s: string): number => (s.match(/\(/g)?.length ?? 0) - (s.match(/\)/g)?.length ?? 0);
+
+// Drop the body: everything from the first "{" outside parentheses, so a destructured or
+// object-typed parameter (`f({ a }: { a: string })`) stays in the signature.
+function cutBody(head: string): string {
+  let depth = 0;
+  for (let i = 0; i < head.length; i++) {
+    const ch = head[i];
+    if (ch === "(") { depth++; } else if (ch === ")") { depth--; } else if (ch === "{" && depth <= 0) { return head.slice(0, i).trimEnd(); }
+  }
+  return head;
 }
 
 /**

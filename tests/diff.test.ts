@@ -309,6 +309,19 @@ describe("TreeSitterExtractor", () => {
     expect(r?.signatures).toEqual(["export type Role", "export const handler = async (req: any) =>", "export class A", "m()"]);
   });
 
+  it("a parameter list over several lines stays one signature", async () => {
+    const src = "export async function showNotification(\n\ttitle: string,\n\toptions?: NotificationOptions,\n): Promise<Notification | null> {\n  return null;\n}\n";
+    const r = await extractSignals("n.ts", src, null);
+    expect(r?.signatures).toEqual(["export async function showNotification(title: string, options?: NotificationOptions): Promise<Notification | null>"]);
+    const py = await extractSignals("p.py", "def charge(\n    amount,\n    currency,\n):\n    pass\n", null);
+    expect(py?.signatures).toEqual(["def charge(amount, currency)"]);
+  });
+
+  it("a { inside the parameter list is not mistaken for the body", async () => {
+    const src = "export function MenuFilter({ tags }: { tags: string[] }) {\n  return null;\n}\n";
+    expect((await extractSignals("m.tsx", src, null))?.signatures).toEqual(["export function MenuFilter({ tags }: { tags: string[] })"]);
+  });
+
   it("topLevelOnly skips class members", async () => {
     const r = await extractSignals("x.ts", "export class A {\n  m() {}\n}\n", null, { topLevelOnly: true });
     expect(r?.signatures).toEqual(["export class A"]);
