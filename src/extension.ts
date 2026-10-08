@@ -31,6 +31,8 @@ let orchestrator: Orchestrator;
 let lastReviewedFiles: string[] = [];
 // Mode the Compliance panel was opened with; "Re-run" and the status bar's re-run keep it.
 let lastReviewMode: ReviewMode = "full";
+// Violations from the last review not yet handled in the panel; at zero the status bar leaves "Violation".
+let unresolvedViolations = 0;
 let extensionUri: vscode.Uri;
 
 // Read-only documents for previews (e.g. a regenerated ARCH.md shown in a diff before applying).
@@ -503,6 +505,8 @@ function setCompliancePanelHandler(panel: BlueprintPanel): void {
             message.reasoning as string,
             lastReviewedFiles
           );
+          // "Modify Code" counts as handled too: idle (not OK), since the fix isn't reviewed yet.
+          if (--unresolvedViolations <= 0) { statusBar.clearViolation(); }
           panel.postMessage(result
             ? {
                 command: "itemResolved", kind, index, adrId: result.adr.id, pending: !result.autoApproved,
@@ -554,6 +558,7 @@ async function runReview(panel: BlueprintPanel, mode: ReviewMode): Promise<void>
     // Files an ADR links back to; deleted ones can't be opened, so they're left out.
     const summary = outcome.diffSummary as DiffSummary;
     lastReviewedFiles = summary.changedFiles.filter((f) => !summary.deletedFiles.includes(f));
+    unresolvedViolations = outcome.result.violations.length;
     panel.postMessage({ command: "result", result: outcome.result, diffSummary: outcome.diffSummary });
   } catch (err) {
     panel.postMessage({ command: "error", message: err instanceof Error ? err.message : String(err) });

@@ -93,3 +93,12 @@ export class TreeItem {
   constructor(readonly label: string, readonly collapsibleState?: number) {}
 }
 export enum TreeItemCollapsibleState { None = 0, Collapsed = 1, Expanded = 2 }
+
+export enum StatusBarAlignment { Left = 1, Right = 2 }
+export interface FakeStatusBarItem {
+  text: string; tooltip?: string; command?: string; backgroundColor?: ThemeColor;
+  show(): void; dispose(): void;
+}
+export const window = {
+  createStatusBarItem: (): FakeStatusBarItem => ({ text: "", show: () => {}, dispose: () => {} }),
+};

@@ -11,6 +11,7 @@ export class StatusBarManager {
   private pending = 0;
   private idle = false;
   private uninitialized = false;
+  private violation = false;
   private who = "";
 
   constructor() {
@@ -24,6 +25,7 @@ export class StatusBarManager {
     if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = undefined; }
     this.idle = idle;
     this.uninitialized = false;
+    this.violation = false;
     this.item.text = text;
     this.item.tooltip = this.who ? `${tooltip}\n\n${this.who}` : tooltip;
     this.item.command = command;
@@ -80,6 +82,12 @@ export class StatusBarManager {
       "blueprint.showLastReview",
       true
     );
+    this.violation = true;
+  }
+
+  /** Every violation from the last review has been handled: back to idle, unless another state took over. */
+  clearViolation(): void {
+    if (this.violation) { this.setIdle(); }
   }
 
   setOk(): void {

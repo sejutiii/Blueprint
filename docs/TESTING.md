@@ -106,6 +106,7 @@ Run with F5, then open one of the projects in `test/`. A free Gemini or Groq key
 - [ ] Create a new file: the review prompt appears once even for several files (debounced).
 - [ ] Hub → Check for Violations, then "Re-run review": the panel still says nothing about new components (mode kept). Same for Check for Extensions.
 - [ ] After a review with violations, click "Violation" in the status bar: the open Compliance panel comes to the front with no new review. Close the panel and click again: the review re-runs in the same mode.
+- [ ] Resolve every violation in the panel (any mix of "Update Architecture" and "Modify Code"): the status bar goes back to "BluePrint" without a new review.
 - [ ] Review with nothing changed (commit everything first): "No uncommitted changes" with a working "Check again" button. Same screen in a folder that isn't a git repo.
 
 **ADR Browser**
