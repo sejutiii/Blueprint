@@ -202,9 +202,8 @@ async function checkInitialized(): Promise<void> {
     await refreshProviders();
   } else {
     statusBar.setUninitialized();
-    await refreshRoles();
+    await refreshRoles(); // also redraws the Hub
   }
-  await pushHubState();
 }
 
 // ── Roles: who you are, shown everywhere a role matters ────────────────────
@@ -226,6 +225,7 @@ async function refreshRoles(): Promise<void> {
   statusBar.setIdentity(currentRoles);
   if (currentRoles) { BlueprintPanel.get("roles")?.postMessage({ command: "render", roles: currentRoles }); }
   await renderArchViewer();
+  await pushHubState();
 }
 
 function sendQuestion(panel: BlueprintPanel, q: WizardQuestion): void {
@@ -594,21 +594,36 @@ async function handleShowLastReview(context: vscode.ExtensionContext): Promise<v
 async function handleHub(context: vscode.ExtensionContext): Promise<void> {
   const panel = BlueprintPanel.show("hub", context.extensionUri);
   panel.setMessageHandler(async (msg) => {
+    const run = (action: () => unknown) => Promise.resolve(action()).catch(reportError);
     switch (msg.command) {
-      case "ready":          await pushHubState();                                         break;
-      case "init":           await handleInit(context).catch(reportError);                 break;
-      case "openViolations": await handleReview(context, "violations").catch(reportError); break;
-      case "openExtensions": await handleReview(context, "extensions").catch(reportError); break;
-      case "openPreCheck":   await handlePreCheck(context).catch(reportError);              break;
-      case "openAddDecision": await handleAddDecision(context).catch(reportError);        break;
+      case "ready":           await pushHubState();                        break;
+      case "init":            await run(() => handleInit(context));        break;
+      case "openReview":      await run(() => handleReview(context, "full")); break;
+      case "openPreCheck":    await run(() => handlePreCheck(context));    break;
+      case "viewArch":        await run(() => openArchMd());               break;
+      case "openAddDecision": await run(() => handleAddDecision(context)); break;
+      case "viewAuditTrail":  await run(() => handleViewAuditTrail(context)); break;
+      case "openApprovals":   await run(() => vscode.commands.executeCommand("blueprint.openAdrBrowser")); break;
+      case "configureRoles":  await run(() => handleConfigureRoles());     break;
+      case "changeProvider":  await run(() => handleChangeProvider(context)); break;
     }
   });
   await panel.loadMedia("blueprintHub.html", { nonce: panel.nonce });
 }
 
-// Before init the Hub offers only "Initialize"; it switches over live once setup finishes.
+// The Hub follows the project's state: only "Initialize" before setup; afterwards who you are and
+// how many decisions await approval. Pushed on every refresh, so it stays live while open.
 async function pushHubState(): Promise<void> {
-  BlueprintPanel.get("hub")?.postMessage({ command: "state", initialized: await orchestrator.isInitialized() });
+  const hub = BlueprintPanel.get("hub");
+  if (!hub) { return; }
+  hub.postMessage({
+    command:         "state",
+    initialized:     await orchestrator.isInitialized(),
+    pending:         adrTreeProvider.pendingCount(),
+    role:            currentRoles?.role ?? "architect",
+    identity:        currentRoles?.identity ?? null,
+    rolesConfigured: currentRoles?.configured ?? false,
+  });
 }
 
 // ── Audit trail ─────────────────────────────────────────────────────────────

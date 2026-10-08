@@ -1,12 +1,12 @@
 # BluePrint — Completion Tasks
 
-## ▶ Resume here (paused 2026-10-05)
+## ▶ Resume here (updated 2026-10-08)
 
 **State.** All work is committed on branch `complete-srs` (`main` is untouched); the only untracked files are the `test/` fixture projects. `npm test` (142 tests) and `npm run typecheck` pass; `npm run build` and `npm run package` work. Phases 1–4 are done except the items below.
 
 **Next steps, in order**
-1. **UI fixes** — see "Phase 3b — UI review" below. U1–U6 done (2026-10-08); U17 is a small follow-up; U7–U10 have a recommendation that still needs the developer's OK; U16 is an open question. U11–U15 (roles) are done. Done first so the manual checklist tests the updated UI.
-2. **Run the manual checklist** in [docs/TESTING.md](docs/TESTING.md) in the Extension Development Host (F5) against the projects in `test/`. *Nothing has been run inside VS Code yet* — expect a few more UI fixes. Fix whatever it finds.
+1. ~~UI fixes~~ — Phase 3b is complete (U1–U17, 2026-10-08).
+2. **Run the manual checklist** ← *next* in [docs/TESTING.md](docs/TESTING.md) in the Extension Development Host (F5) against the projects in `test/`. *Nothing has been run inside VS Code yet* — expect a few more UI fixes. Fix whatever it finds.
 3. **Small items:** B15 (ESLint config), P3 (gitignore `test/`), E6 (remaining setting: top-K — present a plan first).
 4. **E5** non-git diff fallback — present a plan first.
 5. **P1** README / LICENSE / `repository` / icon — **open question: which license?** (MIT suggested). Then drop the `--allow-missing-repository --skip-license` flags in `scripts/package.js` (marked TODO).
@@ -94,10 +94,10 @@ Legend: `[ ]` todo · `[x]` done · **SRS** = section/test-case it satisfies.
 - [x] **U17** After every violation in the Compliance panel is resolved, the status bar still said "Violation". *(2026-10-08: back to idle once each violation of the last review is handled; idle rather than OK, since a "Modify Code" fix isn't reviewed yet. First StatusBarManager unit tests, `tests/ui.test.ts`.)*
 
 **Design changes** — recommendation proposed, waiting for the developer's OK.
-- [ ] **U7 Hub as a state-aware dashboard.** With D1 the separate Violations / Extensions cards are mostly redundant, and newer features (viewer, audit trail, approvals, roles) aren't reachable from the Hub. *Recommended:* main cards **Review my changes** (full), **Pre-check a prompt**, **View architecture**; secondary links Audit trail, **N pending approvals**, Configure roles, Change LLM provider; before init, a single **Initialize** card. *Alternative:* drop the Hub and put actions in the sidebar.
+- [x] **U7** Hub as a state-aware dashboard. *(2026-10-08: before init only "Initialize"; after init the header shows who you are, a banner shows pending approvals (opens the ADR Browser), four cards — Review my changes (full), Pre-check a prompt, View architecture, Add a decision (kept from D11) — and links to Audit trail, Team & roles, Change LLM provider. Redrawn live on every refresh. The single-pass "Check for Violations / Extensions" cards are gone; `ReviewMode` stays in the orchestrator, so U4's mode memory only matters if a single-pass entry point returns.)*
 - [x] **U8** Sidebar "Audit Trail" duplicated the ADR list. *(2026-10-08: shows the latest 20 `audit-log.json` entries with an icon per event (warning for a review with violations), "Show all N entries…" and the title button open the full trail, decision entries open their ADR. Refreshes on every append and when the file changes on disk, e.g. after `git pull`.)*
 - [x] **U9** No way to change LLM provider / API key without re-running Initialize. *(2026-10-08: "BluePrint: Change LLM Provider / API Key" — quick pick (current marked, model shown) → password box with a key-page button → validated with one request → saved to SecretStorage. Per machine, so no role check or audit entry. In the palette and the ADR Browser "…" menu; the Hub link comes with U7.)*
-- [ ] **U10 Search vs Filter ADRs overlap.** *Recommended:* keep both (Search jumps to one ADR, Filter narrows the list); covered by the U3 fixes.
+- [x] **U10** Search vs Filter ADRs overlap. *(Kept both, D12: Search jumps to one ADR, Filter narrows the list; the confusing text was fixed in U3.)*
 
 **Roles in the UI** (agreed 2026-10-06, built)
 - [x] **U11 Team & roles setup.** Wizard step 2 of 4 when there is no `roles.json` (Just me / A team / Skip; needs a git email for the first two). If `roles.json` exists the step is skipped and the next screen says which role you have. "Configure Team & Roles" opens the same form as a panel (read-only for Developers; "Edit roles.json directly" stays). The person saving is always an Architect. Initialize is Architect-only once roles exist (D9).

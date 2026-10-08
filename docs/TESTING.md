@@ -87,6 +87,7 @@ Run with F5, then open one of the projects in `test/`. A free Gemini or Groq key
 **Setup**
 - [ ] A fresh folder: status bar shows "BluePrint: Not initialized"; the sidebar views are hidden (T1, T2). No BluePrint button in the editor tab bar.
 - [ ] Before init, "BluePrint: Open Hub" shows only an "Initialize BluePrint" card, which opens the wizard. Leave the Hub open: once ARCH.md is generated it switches to the normal cards, and the editor tab bar gets the Hub button.
+- [ ] Hub after init: header shows your email and role; four cards (Review my changes, Pre-check a prompt, View architecture, Add a decision) and links (Audit trail, Team & roles, Change LLM provider) each open the right thing. With a pending decision a yellow banner shows the count ("needs your approval" / "waiting for an Architect") and opens the ADR Browser; approving it removes the banner while the Hub stays open.
 - [ ] Initialize: an invalid key shows "…rejected this API key"; a valid key moves on; "Get a key ↗" opens the provider's page.
 - [ ] Generate the architecture; the sidebar appears (T3).
 - [ ] Answer a concrete constraint ("We use PostgreSQL"): a draft appears, editable, and a follow-up question comes next. Save with an empty title → inline error.
@@ -105,7 +106,6 @@ Run with F5, then open one of the projects in `test/`. A free Gemini or Groq key
 - [ ] Resolve two violations separately with "Update Architecture": two ADRs (D2). "Modify Code" records none.
 - [ ] Register one component, dismiss another (T39, T40). The ARCH.md viewer highlights Components.
 - [ ] Create a new file: the review prompt appears once even for several files (debounced).
-- [ ] Hub → Check for Violations, then "Re-run review": the panel still says nothing about new components (mode kept). Same for Check for Extensions.
 - [ ] After a review with violations, click "Violation" in the status bar: the open Compliance panel comes to the front with no new review. Close the panel and click again: the review re-runs in the same mode.
 - [ ] Resolve every violation in the panel (any mix of "Update Architecture" and "Modify Code"): the status bar goes back to "BluePrint" without a new review.
 - [ ] Review with nothing changed (commit everything first): "No uncommitted changes" with a working "Check again" button. Same screen in a folder that isn't a git repo.
