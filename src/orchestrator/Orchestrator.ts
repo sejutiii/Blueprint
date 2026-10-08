@@ -8,7 +8,7 @@ import { Role, buildRolesManifest, rolesConfigured } from "../access/roles";
 import { ArchitectureAgent } from "../agents/ArchitectureAgent";
 import { ConstraintElicitationAgent, DecisionDraftResult } from "../agents/ConstraintElicitationAgent";
 import { ComplianceAgent } from "../agents/ComplianceAgent";
-import { DiffSummarizer } from "../agents/DiffSummarizer";
+import { DiffSummarizer, NoDiffReason } from "../agents/DiffSummarizer";
 import { RetrievalAgent } from "../agents/RetrievalAgent";
 import { PreCheckAgent } from "../agents/PreCheckAgent";
 import { PreCheckResult, buildPromptWithContext } from "../prompts/preCheckPrompts";
@@ -29,7 +29,7 @@ export type OrchestratorState = "idle" | "checking" | "ok" | "violation";
 export type ReviewMode = "full" | "violations" | "extensions";
 
 export type ReviewOutcome =
-  | { kind: "noDiff" }
+  | { kind: "noDiff"; reason: NoDiffReason }
   | { kind: "result"; result: ComplianceResult; diffSummary: DiffSummary };
 
 export interface PreCheckAdr {
@@ -257,7 +257,7 @@ export class Orchestrator {
       const rawDiff    = await summarizer.getDiff(ws.root);
       if (!rawDiff.trim()) {
         this.hooks.onState("idle");
-        return { kind: "noDiff" };
+        return { kind: "noDiff", reason: await summarizer.whyEmpty(ws.root) };
       }
       const diffSummary = await summarizer.summarize(rawDiff, ws.root);
       const agent       = new ComplianceAgent(llm);

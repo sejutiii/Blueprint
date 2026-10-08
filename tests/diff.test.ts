@@ -235,6 +235,57 @@ describe("DiffSummarizer.getDiff + Tree-sitter, against real git repos", () => {
     expect(sum.newSignatures).toEqual(expect.arrayContaining(["def cache(self, k)", "export class EventBus", "publish(e: string)"]));
     expect(sum.newSignatures).not.toContain("class Store");
   });
+
+  it("a repo with changes is never reported as 'not git' or 'ignored'", async () => {
+    await expect(new DiffSummarizer().whyEmpty(repo)).resolves.toEqual({ kind: "clean" });
+    await expect(new DiffSummarizer().whyEmpty(notGit)).resolves.toEqual({ kind: "not-git" });
+  });
+});
+
+// The workspace is a folder inside a larger repo (a monorepo package, or the test/ fixtures here).
+describe("DiffSummarizer.getDiff — workspace inside an outer repo", () => {
+  let outer: string;
+  const git = (cmd: string) => execSync(`git ${cmd}`, { cwd: outer, stdio: "pipe" });
+  const write = (rel: string, text: string) => {
+    fs.mkdirSync(path.dirname(path.join(outer, rel)), { recursive: true });
+    fs.writeFileSync(path.join(outer, rel), text);
+  };
+
+  beforeAll(() => {
+    outer = tempDir();
+    git("init -q");
+    git("config user.email t@t.io");
+    git("config user.name t");
+    write("root.ts", "export const root = 1;\n");
+    write("pkg/a.ts", "export const a = 1;\n");
+    write(".gitignore", "ignored/\n");
+    git("add -A");
+    git("commit -qm init");
+    write("root.ts", "export const root = 2;\nexport class OutsideTheWorkspace {}\n"); // must not be reviewed
+    write("pkg/a.ts", "export const a = 1;\nexport class Billing {}\n");
+    write("pkg/new.ts", "export function helper() { return 1; }\n");
+    write("ignored/x.ts", "export const hidden = 1;\n");
+  });
+  afterAll(() => removeDir(outer));
+
+  it("reviews only the workspace's own changes, with paths relative to it", async () => {
+    const pkg = path.join(outer, "pkg");
+    const s = new DiffSummarizer();
+    const sum = await s.summarize(await s.getDiff(pkg), pkg);
+    expect(sum.changedFiles.sort()).toEqual(["a.ts", "new.ts"]);
+    // Tree-sitter found the files on disk, so the paths resolve against the workspace.
+    expect(sum.newSignatures).toEqual(expect.arrayContaining(["export class Billing", "export function helper()"]));
+    expect(sum.newSignatures).not.toContain("export class OutsideTheWorkspace");
+  });
+
+  it("a folder the outer repo ignores is reported as ignored, not as 'no changes'", async () => {
+    const ignored = path.join(outer, "ignored");
+    const s = new DiffSummarizer();
+    expect(await s.getDiff(ignored)).toBe("");
+    const reason = await s.whyEmpty(ignored);
+    expect(reason.kind).toBe("ignored");
+    expect(reason.kind === "ignored" && path.basename(reason.repoRoot)).toBe(path.basename(outer));
+  });
 });
 
 describe("TreeSitterExtractor", () => {

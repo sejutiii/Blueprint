@@ -26,19 +26,27 @@ export function isReviewable(file: string): boolean {
   return !LOCKFILES.test(file) && !BLUEPRINT_ARTIFACTS.test(file);
 }
 
+/** Why a review found nothing to look at; the Compliance panel words each case differently. */
+export type NoDiffReason =
+  | { kind: "clean" }                        // a git repo with nothing uncommitted
+  | { kind: "not-git" }                      // no repository here or in any parent folder
+  | { kind: "ignored"; repoRoot: string };   // inside an outer repo whose ignore rules hide this folder
+
 export class DiffSummarizer {
   async getDiff(workspaceRoot: string): Promise<string> {
     try {
       // Staged + unstaged changes relative to HEAD in one diff, so hunk line numbers match the
       // files on disk (which Tree-sitter parses). A repo with no commits yet has no HEAD, so
       // fall back to the separate staged/unstaged diffs there.
+      // --relative: when the workspace is a subfolder of a larger repo, only its own changes
+      // count, with paths relative to it (as `git ls-files` below already reports them).
       let tracked: string;
       try {
-        tracked = (await execAsync("git diff HEAD", { cwd: workspaceRoot, ...GIT_OPTS })).stdout;
+        tracked = (await execAsync("git diff HEAD --relative", { cwd: workspaceRoot, ...GIT_OPTS })).stdout;
       } catch {
         const [staged, unstaged] = await Promise.all([
-          execAsync("git diff --cached", { cwd: workspaceRoot, ...GIT_OPTS }),
-          execAsync("git diff",          { cwd: workspaceRoot, ...GIT_OPTS }),
+          execAsync("git diff --cached --relative", { cwd: workspaceRoot, ...GIT_OPTS }),
+          execAsync("git diff --relative",          { cwd: workspaceRoot, ...GIT_OPTS }),
         ]);
         tracked = staged.stdout + unstaged.stdout;
       }
@@ -59,6 +67,23 @@ export class DiffSummarizer {
       return filterDiffBlocks(tracked, isReviewable) + untrackedDiffs.filter(Boolean).join("");
     } catch {
       return "";
+    }
+  }
+
+  /** Called when getDiff found nothing: tells "nothing changed" apart from "git can't see this folder". */
+  async whyEmpty(workspaceRoot: string): Promise<NoDiffReason> {
+    let repoRoot: string;
+    try {
+      repoRoot = (await execAsync("git rev-parse --show-toplevel", { cwd: workspaceRoot })).stdout.trim();
+    } catch {
+      return { kind: "not-git" };
+    }
+    try {
+      // Exit code 0 means "ignored"; 1 (not ignored) throws.
+      await execAsync("git check-ignore -q .", { cwd: workspaceRoot });
+      return { kind: "ignored", repoRoot: path.normalize(repoRoot) };
+    } catch {
+      return { kind: "clean" };
     }
   }
 

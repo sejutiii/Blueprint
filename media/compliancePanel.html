@@ -118,6 +118,11 @@
     .info-wrap { text-align: center; padding: 48px 0; }
     .info-icon { font-size: 32px; margin-bottom: 14px; opacity: 0.45; }
     .info-wrap p { color: var(--vscode-descriptionForeground); font-size: 12px; line-height: 1.7; }
+    code {
+      font-family: var(--vscode-editor-font-family); font-size: 11px;
+      background: var(--vscode-textCodeBlock-background, rgba(128,128,128,0.15));
+      padding: 1px 5px; border-radius: 3px;
+    }
 
     .saved-wrap { text-align: center; padding: 48px 0; }
     .saved-icon {
@@ -210,9 +215,8 @@
   <div id="screen-no-diff" class="hidden">
     <div class="info-wrap">
       <div class="info-icon">⚡</div>
-      <h2 style="margin-bottom:8px">No uncommitted changes</h2>
-      <p>BluePrint reviews what changed since the last git commit, and found nothing.<br>
-        Make some changes, then check again. (The project must be a git repository.)</p>
+      <h2 style="margin-bottom:8px" id="no-diff-title">No uncommitted changes</h2>
+      <p id="no-diff-text"></p>
       <div style="margin-top:18px"><button class="btn-secondary" id="btn-rerun-nodiff">Check again</button></div>
     </div>
   </div>
@@ -419,6 +423,26 @@
     }
   });
 
+  // An empty diff has three causes; only the first means there is truly nothing to review.
+  function showNoDiff(reason) {
+    const title = document.getElementById('no-diff-title');
+    const text  = document.getElementById('no-diff-text');
+    if (reason.kind === 'not-git') {
+      title.textContent = 'This folder is not a git repository';
+      text.innerHTML = 'BluePrint reviews what changed since the last git commit, so it needs git.<br>' +
+        'Run <code>git init</code> in this folder, then check again.';
+    } else if (reason.kind === 'ignored') {
+      title.textContent = 'Git is ignoring this folder';
+      text.innerHTML = `This folder is inside the git repository at <code>${esc(reason.repoRoot)}</code>, ` +
+        'whose ignore rules hide it, so BluePrint cannot see its changes.<br>' +
+        'Run <code>git init</code> in this folder to give it its own repository, then check again.';
+    } else {
+      title.textContent = 'No uncommitted changes';
+      text.innerHTML = 'BluePrint reviews what changed since the last git commit, and found nothing.<br>' +
+        'Make some changes, then check again.';
+    }
+  }
+
   function rerun() {
     showScreen('screen-checking');
     vscode.postMessage({ command: 'rerun' });
@@ -434,6 +458,7 @@
         break;
 
       case 'noDiff':
+        showNoDiff(msg.reason || { kind: 'clean' });
         showScreen('screen-no-diff');
         break;
 

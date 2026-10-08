@@ -564,7 +564,7 @@ async function runReview(panel: BlueprintPanel, mode: ReviewMode): Promise<void>
   try {
     const outcome = await orchestrator.review(mode);
     if (outcome.kind === "noDiff") {
-      panel.postMessage({ command: "noDiff" });
+      panel.postMessage({ command: "noDiff", reason: outcome.reason });
       return;
     }
     // Files an ADR links back to; deleted ones can't be opened, so they're left out.

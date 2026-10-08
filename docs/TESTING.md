@@ -108,7 +108,8 @@ Run with F5, then open one of the projects in `test/`. A free Gemini or Groq key
 - [ ] Create a new file: the review prompt appears once even for several files (debounced).
 - [ ] After a review with violations, click "Violation" in the status bar: the open Compliance panel comes to the front with no new review. Close the panel and click again: the review re-runs in the same mode.
 - [ ] Resolve every violation in the panel (any mix of "Update Architecture" and "Modify Code"): the status bar goes back to "BluePrint" without a new review.
-- [ ] Review with nothing changed (commit everything first): "No uncommitted changes" with a working "Check again" button. Same screen in a folder that isn't a git repo.
+- [ ] Review with nothing changed (commit everything first): "No uncommitted changes" with a working "Check again" button. In a folder that isn't a git repo: "This folder is not a git repository". In a folder an outer repo ignores: "Git is ignoring this folder", naming that repo.
+- [ ] Open a subfolder of a larger repo (e.g. a package in a monorepo) and change a file in it and one outside it: the review lists only the file inside, with paths relative to the folder.
 
 **ADR Browser**
 - [ ] Filter ADR Browser → `postgres`: the banner reads `Filter: "postgres"` with a dimmed "click to clear", and a Clear-filter button appears in the view title. Either one clears the filter and the button disappears.
