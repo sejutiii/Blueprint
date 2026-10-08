@@ -98,13 +98,15 @@ describe("Orchestrator — Architect-only actions", () => {
     expect((await new AuditLog(Uri.file(dir) as never).getAll()).map((e) => e.eventType)).toEqual(["roles_updated"]);
   });
 
-  it("a Developer cannot change roles, initialize, or approve", async () => {
+  it("a Developer cannot change roles, initialize, approve, or revert ARCH.md", async () => {
     writeRoles({ architects: ["lead@x.io"], developers: ["me@x.io"] });
     identity = "me@x.io";
     await expect(orchestrator.saveRoles([], [])).rejects.toThrow(/Only an Architect can change roles.*Architects: lead@x\.io/);
     // Refused before any LLM call or file write.
     await expect(orchestrator.generateArchitecture("a shop")).rejects.toThrow(/Only an Architect can initialize/);
     await expect(orchestrator.requireApprover()).rejects.toThrow(/Only an Architect can approve/);
+    await expect(orchestrator.requireReverter()).rejects.toThrow(/Only an Architect can revert ARCH\.md/);
+    await expect(orchestrator.revertArch("H0001", "x")).rejects.toThrow(/Only an Architect can revert ARCH\.md/);
     expect(fs.existsSync(path.join(dir, "docs", "ARCH.md"))).toBe(false);
   });
 
@@ -113,6 +115,19 @@ describe("Orchestrator — Architect-only actions", () => {
     identity = "Lead@X.io";
     await expect(orchestrator.requireApprover()).resolves.toBeUndefined();
     await expect(orchestrator.saveRoles(["second@x.io"], [])).resolves.toMatchObject({ architects: ["lead@x.io", "second@x.io"] });
+  });
+
+  it("an Architect's revert restores ARCH.md and is audited with who did it", async () => {
+    writeRoles({ architects: ["lead@x.io"] });
+    identity = "lead@x.io";
+    const store = new FileStore(Uri.file(dir) as never);
+    await store.writeArchBlueprint(blueprint({ systemOverview: "Original." }), "Shop");
+    await store.writeArchBlueprint(blueprint({ systemOverview: "Rewritten." }), "Shop", "ARCH.md re-initialized");
+    const [h] = await store.getHistory();
+    await orchestrator.revertArch(h.id, h.reason);
+    expect(fs.readFileSync(path.join(dir, "docs", "ARCH.md"), "utf8")).toContain("Original.");
+    const entries = await new AuditLog(Uri.file(dir) as never).getAll();
+    expect(entries.at(-1)).toMatchObject({ eventType: "arch_reverted", actor: "lead@x.io" });
   });
 
   it("'Edit roles.json directly' without a git identity names no Architects instead of a placeholder", async () => {

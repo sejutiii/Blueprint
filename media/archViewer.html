@@ -113,7 +113,11 @@
     document.getElementById('legend-text').textContent = highlighted
       ? `Highlighted: sections changed in the last ${msg.recentLimit} changes`
       : (msg.historyCount ? 'No sections changed in the recent history' : 'No changes recorded since initialization');
-    document.getElementById('btn-revert').disabled = !msg.historyCount;
+    const revert = document.getElementById('btn-revert');
+    revert.disabled = !msg.historyCount || msg.isArchitect === false;
+    revert.title = msg.isArchitect === false
+      ? 'Only an Architect can revert ARCH.md (see BluePrint: Configure Roles)'
+      : 'Restore an earlier version of ARCH.md (Architect only)';
     const regen = document.getElementById('btn-regenerate');
     regen.disabled = msg.isArchitect === false;
     regen.title = msg.isArchitect === false

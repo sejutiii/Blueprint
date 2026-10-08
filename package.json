@@ -187,7 +187,7 @@
         },
         {
           "command": "blueprint.revertArch",
-          "when": "blueprint.initialized"
+          "when": "blueprint.initialized && blueprint.isArchitect"
         },
         {
           "command": "blueprint.configureRoles"

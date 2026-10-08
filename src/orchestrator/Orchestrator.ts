@@ -66,6 +66,7 @@ export interface OrchestratorHooks {
 }
 
 const TOP_K = 5;
+const REVERT_ACTION = "revert ARCH.md, because it rewrites the whole document";
 
 /**
  * Routes developer events to agent pipelines and owns workflow state. Kept thin: it assembles
@@ -401,6 +402,20 @@ Location: ${violation.affectedCodeLocation}` : "";
       summary:   `ARCH.md regenerated from codebase (${blueprint.components.length} components, ${blueprint.constraints.length} constraints)`,
       actor,
     });
+    this.hooks.onDataChanged();
+  }
+
+  /** Fails fast (before listing versions) when a Developer tries to revert ARCH.md. */
+  async requireReverter(): Promise<void> {
+    await this.requireArchitect(REVERT_ACTION);
+  }
+
+  /** Restores an ARCH.md snapshot. Architect-only like regeneration: it rewrites the whole document. */
+  async revertArch(historyId: string, reason: string): Promise<void> {
+    const actor = await this.requireArchitect(REVERT_ACTION);
+    const { fileStore, audit } = this.workspace();
+    await fileStore.revertTo(historyId);
+    await audit?.append({ eventType: "arch_reverted", summary: `ARCH.md reverted to the version before "${reason}"`, actor });
     this.hooks.onDataChanged();
   }
 

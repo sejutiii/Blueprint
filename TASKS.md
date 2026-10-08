@@ -39,6 +39,7 @@ Legend: `[ ]` todo · `[x]` done · **SRS** = section/test-case it satisfies.
 - **D9 — Roles are set up during initialization** (new wizard step when there is no `roles.json`; an existing one is used as is). Once Architects are named, only they can initialize/re-initialize or change roles.
 - **D10 — No light/heavy model tiers** (drops future_extensions #1): every task is one API call to the configured model; the per-provider model setting covers choosing a cheaper or stronger model.
 - **D11 — Add Decision** (2026-10-06): free-text decision → editable ADR draft; it may replace an existing accepted ADR (suggested by the model, chosen by the developer), which is marked superseded and has its ARCH.md constraint swapped on acceptance. Vague text is still drafted, with a warning. The wizard's questions can be reopened on their own.
+- **D12 — UI follow-ups (2026-10-08, recommendations accepted):** Hub becomes a state-aware dashboard (U7); the sidebar Audit Trail shows recent audit-log entries (U8); new "Change LLM Provider / API Key" command (U9); Search and Filter ADRs both stay (U10); Revert ARCH.md is Architect-only like Regenerate (U16).
 - **D4 — Orchestrator split kept** (`src/orchestrator/Orchestrator.ts`): pipelines live there, `extension.ts` is UI only.
 
 ## Phase 1 — Bugs & correctness (fix before adding features)
@@ -104,7 +105,7 @@ Legend: `[ ]` todo · `[x]` done · **SRS** = section/test-case it satisfies.
 - [x] **U13 Architect-only controls hidden from Developers:** Approve/Reject (sidebar + palette), Regenerate (palette; disabled in the ARCH.md viewer). Pending ADRs read "needs your approval" or "waiting for an Architect". Approve/Reject check the role before asking for a note.
 - [x] **U14 Refresh from disk:** watches `.blueprint/adr-index.json`, `roles.json` and `arch.json`, so a `git pull` (or a hand edit of `roles.json`) updates the sidebar, pending count, role and initialized state without a reload.
 - [x] **U15 Honour-system note** in both roles screens (roles.json is protected by code review, e.g. CODEOWNERS, not by BluePrint). *Repeat it in the README (P1).*
-- [ ] **U16 Open question:** "Revert ARCH.md" is still allowed for Developers, although it rewrites the whole document like Regenerate. Make it Architect-only too?
+- [x] **U16** "Revert ARCH.md" is Architect-only (2026-10-08, D12): enforced in the orchestrator (`revertArch`, checked before the version list), hidden from the palette and disabled in the viewer for Developers.
 
 ## Phase 4 — Tests (SRS §5, T1–T53)
 

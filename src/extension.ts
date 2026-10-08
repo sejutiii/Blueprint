@@ -906,6 +906,7 @@ async function handleConfigureRoles(): Promise<void> {
 async function handleRevertArch(): Promise<void> {
   const store = FileStore.fromWorkspace();
   if (!store) { return; }
+  await orchestrator.requireReverter();
   const history = (await store.getHistory()).slice().reverse();
   if (!history.length) {
     vscode.window.showInformationMessage("BluePrint: ARCH.md has no earlier versions yet.");
@@ -933,11 +934,7 @@ async function handleRevertArch(): Promise<void> {
     "Restore"
   );
   if (confirm !== "Restore") { return; }
-  await store.revertTo(picked.entry.id);
-  await AuditLog.fromWorkspace()?.append({
-    eventType: "arch_reverted", summary: `ARCH.md reverted to the version before "${picked.entry.reason}"`,
-    actor: (await AccessControl.fromWorkspace()?.resolveIdentity()) ?? undefined,
-  });
+  await orchestrator.revertArch(picked.entry.id, picked.entry.reason);
   vscode.window.showInformationMessage("BluePrint: ARCH.md restored.");
 }
 

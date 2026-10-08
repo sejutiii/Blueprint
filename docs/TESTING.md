@@ -116,7 +116,7 @@ Run with F5, then open one of the projects in `test/`. A free Gemini or Groq key
 - [ ] Re-run Initialize with `roles.json` present: the roles step is skipped and the description screen names your role.
 - [ ] Unset git email in a fresh project (`git config --local user.email ""`): only "Skip" is selectable; set it, "Check again" enables the others.
 - [ ] Status bar tooltip and the ADR Browser title show your role.
-- [ ] BluePrint: Configure Team & Roles → panel; add a Developer and save. Edit `roles.json` by hand to make yourself a Developer: within a second the sidebar title says "You: Developer", Approve/Reject buttons disappear, pending items say "waiting for an Architect", and the viewer's Regenerate is disabled.
+- [ ] BluePrint: Configure Team & Roles → panel; add a Developer and save. Edit `roles.json` by hand to make yourself a Developer: within a second the sidebar title says "You: Developer", Approve/Reject buttons disappear, pending items say "waiting for an Architect", the viewer's Revert and Regenerate are disabled, and "Revert ARCH.md" is gone from the command palette.
 - [ ] As a Developer: your next decision is pending (sidebar + status bar count); ARCH.md is unchanged. Initialize is refused, naming the Architects; the roles panel is read-only.
 - [ ] Back as Architect: approve and reject from the sidebar's inline buttons; rejection requires a reason.
 - [ ] Simulate a teammate: edit `.blueprint/adr-index.json` (or `git pull` an approval) → the sidebar updates without reloading.
