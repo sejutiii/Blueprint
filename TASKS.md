@@ -7,7 +7,7 @@
 **Next steps, in order**
 1. ~~UI fixes~~ — Phase 3b is complete (U1–U17, 2026-10-08).
 2. **Run the manual checklist** ← *next* in [docs/TESTING.md](docs/TESTING.md) in the Extension Development Host (F5) against the projects in `test/`. *Nothing has been run inside VS Code yet* — expect a few more UI fixes. Fix whatever it finds.
-3. **Small items:** B15 (ESLint config), P3 (gitignore `test/`), E6 (remaining setting: top-K — present a plan first).
+3. **E6** remaining setting: top-K — present a plan first. (B15 and P3 done 2026-10-08.)
 4. **E5** non-git diff fallback — present a plan first.
 5. **P1** README / LICENSE / `repository` / icon — **open question: which license?** (MIT suggested). Then drop the `--allow-missing-repository --skip-license` flags in `scripts/package.js` (marked TODO).
 6. **P2** update the SRS where behaviour deliberately changed (D1–D8 below; T34 and T49 in particular) and write the project's own ARCH.md.
@@ -57,7 +57,7 @@ Legend: `[ ]` todo · `[x]` done · **SRS** = section/test-case it satisfies.
 - [x] **B11** Packaging: per-platform VSIXs (`npm run package` / `package:all`) — win32-x64/arm64, linux-x64/arm64, darwin-arm64 each stage only their onnxruntime binary into dist/node_modules (8–28 MB); a 1.2 MB universal package covers other platforms (Intel Mac, etc.) with lexical-only retrieval. web-tree-sitter bundled, 8 grammars copied to dist/. Quantized model (q8, 23 MB) downloaded on first use into VS Code global storage. Verified: embeddings load from the unpacked VSIX with no node_modules nearby.
 - [x] **B13** BluePrint's own artifacts (`.blueprint/`, `docs/adr/`, `docs/ARCH.md`) were included in the reviewed diff and sent to the LLM. *(fixed — `isReviewable` filter)*
 - [x] **B14** Webviews used `alert()`, which VS Code webviews block. *(removed everywhere)*
-- [ ] **B15** No ESLint config exists, so `npm run lint` fails.
+- [x] **B15** No ESLint config existed, so `npm run lint` failed. *(2026-10-08: `.eslintrc.json` — eslint:recommended + typescript-eslint recommended, `_`-prefixed names allowed as unused. The 7 findings fixed: the embedding pipeline is typed; command-argument `any` kept with a scoped disable. `npm run lint` is clean.)*
 - [x] **B12** Security: production builds never read `.env`, and fail if the bundle contains anything key-shaped; `.env` (and tests/planning docs) excluded from the VSIX — previously `.env` itself would have been packaged. Public users bring their own key; the wizard links to each provider's key page and validates the key with one request before saving it. *Rotate the current dev key if any build or VSIX was ever shared.*
 
 ## Phase 2 — Missing normal requirements (SRS 2.1)
@@ -117,7 +117,7 @@ Legend: `[ ]` todo · `[x]` done · **SRS** = section/test-case it satisfies.
 
 - [ ] **P1** `README.md`, `LICENSE`, `CHANGELOG.md`, extension icon, `repository`/`license`/`galleryBanner` in package.json; `vsce package` produces a working VSIX (verify the contents).
 - [ ] **P2** Update the SRS test-plan wording where behavior intentionally differs from the code (e.g. T7 says gemini-2.0-flash; T5 etc.), and write the project's own living `ARCH.md`.
-- [ ] **P3** `.gitignore` currently excludes `.blueprint/`, `docs/adr/`, `docs/ARCH.md`, which the SRS says should be version-controlled in a *user's* repo — fine for this dev repo, but confirm the extension never writes a `.gitignore` entry for them. Add `test/` fixtures (they contain nested `.git`) to `.gitignore`.
+- [x] **P3** `test/` fixtures (nested `.git`) are in `.gitignore` (2026-10-08). Confirmed the extension never writes `.gitignore` or `.git/info/exclude` (it only reads ignore rules via `git ls-files --exclude-standard`), so a user's `.blueprint/`, `docs/adr/`, `docs/ARCH.md` stay version-controlled. *Note for P2:* this dev repo's `.gitignore` excludes `docs/ARCH.md`, `docs/adr/` and `.blueprint/`, so BluePrint's own living ARCH.md needs those lines removed (or another location).
 
 ## Suggested order
 
