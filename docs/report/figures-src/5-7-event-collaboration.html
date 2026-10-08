@@ -1,0 +1,101 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="fig.css"></head>
+<body><div id="fig"></div>
+<script type="module">
+import { Diagram } from "./diagram.js";
+const d = new Diagram();
+const node = (id, x, y, w, t, sub, evt) => d.box(id, { x, y, w, cls: "node",
+  html: `<div class="t">${t}</div>${sub ? `<div class="s">${sub}</div>` : ""}${evt ? `<div class="e">${evt}</div>` : ""}` });
+
+// Event sources
+d.box("dev", { x: 30, y: 20, w: 220, cls: "actor", html: "Developer" });
+d.box("ws", { x: 930, y: 20, w: 240, cls: "actor", html: "VS Code workspace" });
+
+// UI
+node("panel", 30, 160, 220, "BlueprintPanel", "webview panels");
+node("ext", 470, 160, 240, "Extension", "commands, events, wiring");
+node("status", 915, 115, 265, "StatusBarManager");
+node("adrTree", 915, 182, 265, "AdrTreeProvider");
+node("auditTree", 915, 249, 265, "AuditTrailTreeProvider");
+
+// Coordination and data
+node("orch", 470, 420, 240, "Orchestrator", "routes events to pipelines");
+node("audit", 960, 420, 210, "AuditLog");
+node("access", 30, 620, 200, "AccessControl", "who is an Architect");
+node("files", 260, 620, 200, "FileStore", "ARCH.md, arch.json, history");
+node("decisions", 750, 620, 210, "DecisionService", "accept or queue (role from AccessControl)");
+node("adrStore", 990, 620, 180, "AdrStore", "ADR files + index");
+
+// Agents (one row), each with the event that runs it
+const AX = (i) => 30 + i * 163, AW = 155, AY = 880;
+node("snap", AX(0), AY, AW, "Codebase<br>Snapshot", "", "regenerate");
+node("diff", AX(1), AY, AW, "Diff<br>Summarizer", "", "review");
+node("comp", AX(2), AY, AW, "Compliance<br>Agent", "", "review: Pass 1 ∥ Pass 2");
+node("pre", AX(3), AY, AW, "PreCheck<br>Agent", "", "PROMPT_SUBMITTED");
+node("arch", AX(4), AY, AW, "Architecture<br>Agent", "", "PROJECT_INIT / regenerate");
+node("elic", AX(5), AY, AW, "Constraint<br>Elicitation Agent", "", "wizard answer / Add Decision");
+node("retr", AX(6), AY, AW, "Retrieval<br>Agent", "", "review / pre-check");
+d.box("agents", { x: 18, y: AY - 14, w: 1160, h: 140, cls: "groupbox" });
+
+// Bottom: services the agents call
+node("ts", 105, 1110, 230, "TreeSitterExtractor", "imports and declarations");
+node("llm", 360, 1110, 470, "LLMClient", "Gemini, Groq, OpenRouter, Anthropic, OpenAI");
+node("sess", 885, 1110, 150, "Elicitation<br>Session");
+node("emb", 1045, 1110, 135, "Embedding<br>Service", "local MiniLM");
+
+// Event sources → UI
+d.edge({ from: ["dev", "bottom"], to: ["panel", "top"], kind: "flow", label: "fills forms", labelAt: { x: 205, y: 120 } });
+d.edge({ from: ["dev", "right", 0.5], to: ["ext", "top", 0.25], kind: "flow", label: "runs commands, sidebar actions", labelAt: { x: 420, y: 70 } });
+d.edge({ from: ["ws", "left", 0.5], to: ["ext", "top", 0.75], kind: "flow" });
+d.label("file created → offer review<br>ARCH.md, ADRs, roles,<br>audit log changed → refresh", { x: 770, y: 92 }, "evtl wrap");
+
+// UI ↔ Extension
+d.edge({ from: ["panel", "right", 0.3], to: ["ext", "left", 0.3], kind: "flow", label: "posts messages", labelAt: { x: 360, y: 155 } });
+d.edge({ from: ["ext", "left", 0.75], to: ["panel", "right", 0.75], kind: "flow", label: "opens panels, posts results", labelAt: { x: 360, y: 230 } });
+for (const v of ["status", "adrTree", "auditTree"]) {
+  d.edge({ from: ["ext", "right", 0.5], to: [v, "left"], kind: "flow", via: [[870, null]] });
+}
+d.label("refresh", { x: 830, y: 165 });
+
+// Extension ↔ Orchestrator
+d.edge({ from: ["ext", "bottom", 0.25], to: ["orch", "top", 0.25], kind: "flow" });
+d.box("evts", { x: 30, y: 285, w: 400, cls: "notebox", html:
+  `dispatches events:<br><span class="evtl">PROJECT_INIT · PROMPT_SUBMITTED ·<br>CODE_GENERATED · MANUAL_REVIEW_REQUESTED</span><br>+ decision, approval, roles, regenerate, mark implemented` });
+d.box("p1", { x: 528, y: 337, w: 4, h: 4, cls: "anchor" });
+d.edge({ from: ["evts", "right", 0.5], to: ["p1", "left", 0.5], kind: "dash" });
+d.edge({ from: ["orch", "top", 0.75], to: ["ext", "bottom", 0.75], kind: "flow" });
+d.label("onState /<br>onDataChanged", { x: 690, y: 320 }, "evtl wrap");
+
+// Audit log
+d.edge({ from: ["orch", "right", 0.5], to: ["audit", "left", 0.5], kind: "flow", label: "logs reviews,<br>pre-checks, roles", labelCls: "wrap", labelAt: { x: 835, y: 405 } });
+d.edge({ from: ["audit", "top", 0.5], to: ["auditTree", "bottom", 0.62], kind: "flow" });
+d.label("onAppend → refresh", { x: 1065, y: 360 }, "evtl");
+
+// Orchestrator → data
+d.edge({ from: ["orch", "left", 0.5], to: ["access", "top", 0.5], kind: "flow", label: "checks Architect role", labelAt: { x: 230, y: 445 } });
+d.edge({ from: ["orch", "bottom", 0.12], to: ["files", "top", 0.6], kind: "flow", label: "init / regenerate /<br>mark implemented", labelCls: "wrap", labelAt: { x: 420, y: 545 } });
+d.edge({ from: ["orch", "bottom", 0.88], to: ["decisions", "top", 0.35], kind: "flow", label: "propose / approve / reject", labelAt: { x: 760, y: 535 } });
+d.edge({ from: ["decisions", "right", 0.5], to: ["adrStore", "left", 0.5], kind: "flow" });
+d.edge({ from: ["decisions", "bottom", 0.5], to: ["files", "bottom", 0.5], kind: "flow", via: [[null, 760]] });
+d.label("on acceptance: patch ARCH.md", { x: 735, y: 760 }, "evtl");
+
+// Orchestrator → agents (trunk and bus)
+for (const id of ["snap", "diff", "comp", "pre", "arch", "elic", "retr"]) {
+  const i = ["snap", "diff", "comp", "pre", "arch", "elic", "retr"].indexOf(id);
+  d.edge({ from: ["orch", "bottom", 0.5], to: [id, "top"], kind: "flow", via: [[null, 830], [AX(i) + AW / 2, null]] });
+}
+d.label("runs the pipeline for each event", { x: 870, y: 830 });
+
+// Agents → services
+d.edge({ from: ["snap", "bottom"], to: ["ts", "top", 0.25], kind: "flow" });
+d.edge({ from: ["diff", "bottom"], to: ["ts", "top", 0.75], kind: "flow" });
+for (const [id, i] of [["comp", 2], ["pre", 3], ["arch", 4]]) { d.edge({ from: [id, "bottom"], to: ["llm", "top", (AX(i) + AW / 2 - 360) / 470], kind: "flow" }); }
+d.edge({ from: ["elic", "bottom", 0.15], to: ["llm", "top", 0.96], kind: "flow", via: [[null, 1075]] });
+d.edge({ from: ["elic", "bottom", 0.75], to: ["sess", "top", 0.5], kind: "flow" });
+d.edge({ from: ["retr", "bottom", 0.6], to: ["emb", "top", 0.5], kind: "flow", label: "embeds text", labelAt: { x: 1100, y: 1068 } });
+d.edge({ from: ["retr", "right", 0.3], to: ["adrStore", "right", 0.6], kind: "flow", via: [[1188, null]] });
+d.label("reads ADRs,<br>caches embeddings", { x: 1110, y: 790 }, "wrap");
+
+d.render();
+</script>
+</body></html>

@@ -1,0 +1,47 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="fig.css"></head>
+<body><div id="fig"></div>
+<script type="module">
+import { Diagram } from "./diagram.js";
+const d = new Diagram();
+const state = (id, x, y, w, name, act) =>
+  d.box(id, { x, y, w, cls: "state", html: `<div class="name">${name}</div>${act ? `<div class="act">${act}</div>` : ""}` });
+
+// (a) ADR
+d.text("(a) ADR", { x: 20, y: 10, cls: "panel-title" });
+d.box("i1", { x: 337, y: 30, w: 26, cls: "init" });
+state("proposed", 230, 125, 240, "Proposed", "do / wait in the approval queue (ARCH.md unchanged)");
+state("accepted", 40, 420, 270, "Accepted", "entry / patch ARCH.md (snapshot first), cache embedding, write audit entry");
+state("rejected", 420, 420, 240, "Rejected", "entry / record the Architect's reason");
+state("superseded", 40, 720, 270, "Superseded", "entry / swap its constraint in ARCH.md for the new one");
+d.box("f1", { x: 160, y: 900, w: 30, cls: "final" });
+d.box("f2", { x: 525, y: 650, w: 30, cls: "final" });
+
+d.edge({ from: ["i1", "bottom"], to: ["proposed", "top"], kind: "trans", label: "decision saved", labelAt: { x: 420, y: 80 } });
+d.edge({ from: ["proposed", "bottom", 0.3], to: ["accepted", "top", 0.5], kind: "trans",
+         label: "proposer is an Architect<br>(automatic), or an<br>Architect approves", labelCls: "wrap", labelAt: { x: 115, y: 290 } });
+d.edge({ from: ["proposed", "bottom", 0.75], to: ["rejected", "top", 0.5], kind: "trans",
+         label: "an Architect rejects<br>(reason required)", labelCls: "wrap", labelAt: { x: 560, y: 300 } });
+d.edge({ from: ["accepted", "bottom"], to: ["superseded", "top"], kind: "trans",
+         label: "a newer ADR that<br>replaces it is accepted", labelCls: "wrap" });
+d.edge({ from: ["superseded", "bottom"], to: ["f1", "top"], kind: "trans" });
+d.edge({ from: ["rejected", "bottom"], to: ["f2", "top"], kind: "trans" });
+
+// (b) ArchComponent
+d.text("(b) ArchComponent", { x: 760, y: 10, cls: "panel-title" });
+d.box("i2", { x: 937, y: 55, w: 26, cls: "init" });
+state("planned", 830, 125, 240, "Planned", "described, no code yet");
+state("implemented", 830, 470, 240, "Implemented", "files listed in ARCH.md");
+d.box("i3", { x: 1150, y: 505, w: 26, cls: "init" });
+
+d.edge({ from: ["i2", "bottom"], to: ["planned", "top"], kind: "trans", label: "Initialize", labelAt: { x: 1010, y: 92 } });
+d.edge({ from: ["planned", "bottom", 0.25], to: ["implemented", "top", 0.25], kind: "trans",
+         label: "its code appears: the<br>developer marks it<br>(no ADR), or<br>Regenerate finds it", labelCls: "wrap", labelAt: { x: 890, y: 330 } });
+d.edge({ from: ["implemented", "top", 0.78], to: ["planned", "bottom", 0.78], kind: "trans",
+         label: "Regenerate no<br>longer finds<br>its code", labelCls: "wrap", labelAt: { x: 1100, y: 330 } });
+d.edge({ from: ["i3", "left"], to: ["implemented", "right", 0.34], kind: "trans" });
+d.label("new component<br>(extension ADR<br>accepted)", { x: 1105, y: 600 }, "wrap");
+
+d.render();
+</script>
+</body></html>

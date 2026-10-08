@@ -1,0 +1,64 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="fig.css"></head>
+<body><div id="fig"></div>
+<script type="module">
+import { Diagram } from "./diagram.js";
+const d = new Diagram();
+const chip = (name, note) => `<div class="chip"><b>${name}</b>${note ? `<span>${note}</span>` : ""}</div>`;
+// Layers are stacked from their measured heights, with room between them for the arrow labels.
+let nextY = 140;
+const GAP = 110;
+const layer = (id, cls, title, _y, chips) => {
+  const el = d.box(id, { x: 20, y: nextY, w: 1120, cls: `layer ${cls}`, html: `<div class="side">${title}</div><div class="chips">${chips.join("")}</div>` });
+  nextY += el.offsetHeight + GAP;
+  return el;
+};
+
+d.box("dev", { x: 180, y: 20, w: 300, cls: "actor", html: `Developer<span>commands, sidebar, panels</span>` });
+d.box("ws",  { x: 720, y: 20, w: 300, cls: "actor", html: `VS Code workspace<span>file created / changed</span>` });
+
+layer("ui", "ui", "UI", 140, [
+  chip("Extension", "commands, events, wiring"),
+  chip("BlueprintPanel", "8 webview panels"),
+  chip("StatusBarManager", "state + role"),
+  chip("AdrTreeProvider", "ADR Browser"),
+  chip("AuditTrailTreeProvider", "recent activity"),
+]);
+layer("coord", "coord", "Coord.", 360, [
+  chip("Orchestrator", "routes events to pipelines; Architect-only checks"),
+  chip("DecisionService", "every new ADR; approval queue"),
+]);
+layer("agents", "agent", "Agents", 520, [
+  chip("ArchitectureAgent", "blueprint from text / code"),
+  chip("ConstraintElicitationAgent", "+ ElicitationSession"),
+  chip("ComplianceAgent", "Pass 1 violations, Pass 2 new code"),
+  chip("PreCheckAgent", "prompt vs. architecture"),
+  chip("RetrievalAgent", "relevant ADRs"),
+  chip("DiffSummarizer", "what changed"),
+]);
+layer("infra", "infra", "Infra", 770, [
+  chip("LLMClient", "5 providers, retries"),
+  chip("EmbeddingService", "local MiniLM"),
+  chip("TreeSitterExtractor", "8 languages"),
+  chip("CodebaseSnapshot"),
+  chip("AdrStore"), chip("FileStore"), chip("AuditLog"), chip("AccessControl"),
+]);
+layer("ext", "ext", "External", 1020, [
+  chip("LLM provider APIs", "Gemini, Groq, OpenRouter, Anthropic, OpenAI"),
+  chip("git", "diff, untracked files"),
+  chip("Project files", ".blueprint/, docs/ARCH.md, docs/adr/"),
+  chip("VS Code storage", "secrets, settings, model cache"),
+]);
+
+d.edge({ from: ["dev", "bottom"], to: ["ui", "top", (330 - 20) / 1120], kind: "flow" });
+d.edge({ from: ["ws", "bottom"], to: ["ui", "top", (870 - 20) / 1120], kind: "flow" });
+d.edge({ from: ["ui", "bottom", 0.3], to: ["coord", "top", 0.3], kind: "flow", label: "user actions, file events" });
+d.edge({ from: ["coord", "top", 0.72], to: ["ui", "bottom", 0.72], kind: "flow", label: "state, data changed → refresh" });
+d.edge({ from: ["coord", "bottom", 0.3], to: ["agents", "top", 0.3], kind: "flow", label: "run pipelines" });
+d.edge({ from: ["coord", "right", 0.5], to: ["infra", "right", 0.3], kind: "flow", via: [[1172, null]], label: "read / write data,<br>check roles", labelCls: "wrap", labelAt: { x: 1040, y: d.rect("infra").y - 45 } });
+d.edge({ from: ["agents", "bottom", 0.3], to: ["infra", "top", 0.3], kind: "flow", label: "prompts, embeddings, parsing" });
+d.edge({ from: ["infra", "bottom", 0.5], to: ["ext", "top", 0.5], kind: "flow", label: "HTTPS, git, file system, VS Code API" });
+
+d.render();
+</script>
+</body></html>

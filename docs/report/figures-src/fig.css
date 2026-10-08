@@ -1,0 +1,60 @@
+/* Shared look for the report figures: drawn at 1200 CSS px (one portrait page width),
+   rendered at 2x; 1px prints at 0.375pt, so 22px text is about 8.3pt. */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #ffffff; font-family: "Segoe UI", Arial, sans-serif; color: #1b2433; }
+#fig { width: 1200px; padding: 24px; background: #ffffff; }
+#fig .mermaid { display: flex; justify-content: center; }
+
+/* Hand-placed diagrams (diagram.js) */
+.box { position: absolute; z-index: 2; background: #fff; border: 2px solid #3a6db5; border-radius: 4px; font-size: 21.3px; }
+.box .head { background: #eef3fb; border-bottom: 2px solid #3a6db5; padding: 7px 10px; text-align: center; }
+.box .title { font-weight: 700; font-size: 22.4px; }
+.box .stereo { font-size: 17.9px; color: #4a5568; }
+.box .attrs { padding: 7px 12px 9px; line-height: 1.35; }
+.box.ref { border-style: dashed; border-color: #8a94a6; }
+.box.ref .head { background: #f4f5f7; border-bottom: none; color: #4a5568; }
+.edges { position: absolute; left: 0; top: 0; z-index: 1; overflow: visible; }
+.edge { fill: none; stroke: #2d3748; stroke-width: 2; }
+.edge.dep { stroke-dasharray: 7 5; }
+.lbl { position: absolute; z-index: 3; background: #fff; padding: 1px 6px; font-size: 19.0px; color: #2d3748; white-space: nowrap; font-style: italic; }
+.mult { position: absolute; z-index: 3; font-size: 17.9px; color: #2d3748; }
+.free { position: absolute; z-index: 3; }
+.note { font-size: 17.9px; color: #4a5568; }
+
+/* Layered architecture overview (5-1) */
+.box.layer { display: flex; border-width: 2px; border-radius: 6px; overflow: hidden; }
+.box.layer .side { writing-mode: vertical-rl; transform: rotate(180deg); color: #fff; font-weight: 700; font-size: 19.0px;
+  letter-spacing: 1px; text-transform: uppercase; padding: 10px 8px; text-align: center; }
+.box.layer .chips { display: flex; flex-wrap: wrap; gap: 10px; padding: 14px; align-content: center; flex: 1; }
+.chip { background: #fff; border: 1.5px solid currentColor; border-radius: 5px; padding: 6px 12px; font-size: 20.2px; line-height: 1.25; }
+.chip b { display: block; font-size: 21.3px; }
+.chip span { font-size: 16.8px; color: #4a5568; }
+.layer.ui    { border-color: #3a6db5; background: #eef3fb; } .layer.ui .side { background: #3a6db5; } .layer.ui .chip { color: #2c5590; }
+.layer.coord { border-color: #b8572f; background: #fbf0ea; } .layer.coord .side { background: #b8572f; } .layer.coord .chip { color: #8e4223; }
+.layer.agent { border-color: #3c8a46; background: #edf6ee; } .layer.agent .side { background: #3c8a46; } .layer.agent .chip { color: #2f6e37; }
+.layer.infra { border-color: #6b4fa0; background: #f2eff8; } .layer.infra .side { background: #6b4fa0; } .layer.infra .chip { color: #563f82; }
+.layer.ext   { border-color: #8a94a6; border-style: dashed; background: #f7f8fa; } .layer.ext .side { background: #8a94a6; } .layer.ext .chip { color: #4a5568; border-style: dashed; }
+.box.actor { background: #fff7d6; border: 2px dashed #c9a227; text-align: center; padding: 10px; font-weight: 700; font-size: 21.3px; }
+.box.actor span { display: block; font-weight: 400; font-size: 16.8px; color: #4a5568; }
+.chip span, .chip b { color: inherit; } .chip span { opacity: 0.85; }
+
+/* State diagrams */
+.box.state { border-radius: 18px; text-align: center; background: #eef3fb; overflow: hidden; }
+.box.state .name { font-weight: 700; font-size: 22.4px; padding: 9px 10px; }
+.box.state .act { font-size: 17.9px; line-height: 1.35; padding: 6px 10px 8px; border-top: 1.5px solid #3a6db5; background: #fff; text-align: left; }
+.box.init { width: 26px !important; height: 26px; border-radius: 50%; background: #2d3748; border: none; }
+.box.final { width: 30px !important; height: 30px; border-radius: 50%; border: 2.5px solid #2d3748; background: radial-gradient(circle, #2d3748 0 7px, #fff 8px); }
+.panel-title { font-size: 21.3px; font-weight: 700; color: #1b2433; }
+.lbl.wrap { white-space: normal; text-align: center; }
+
+/* Event-driven collaboration diagram (5-7) */
+.box.node { background: #e6f2e4; border-color: #5b9a55; text-align: center; padding: 7px 8px; border-radius: 7px; }
+.node .t { font-weight: 700; font-size: 21.3px; line-height: 1.2; }
+.node .s { font-size: 16.2px; color: #4a5568; margin-top: 2px; line-height: 1.25; }
+.node .e, .evtl { font-family: Consolas, "Courier New", monospace; color: #b5332e; }
+.node .e { font-size: 15.7px; margin-top: 3px; line-height: 1.25; }
+.lbl.evtl { font-style: normal; font-size: 16.8px; }
+.box.groupbox { background: transparent; border: 2px dashed #8fbf89; border-radius: 10px; z-index: 0; }
+.box.notebox { background: #fff7d6; border: 1.5px solid #c9a227; border-radius: 4px; padding: 7px 10px; font-size: 16.8px; line-height: 1.35; }
+.edge.dash { stroke-dasharray: 5 4; stroke: #a08a3a; stroke-width: 1.5; }
+.box.anchor { border: none; background: transparent; }
