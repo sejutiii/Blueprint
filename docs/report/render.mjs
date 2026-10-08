@@ -15,7 +15,8 @@ const srcDir = join(here, "figures-src");
 const outDir = join(here, "figures");
 mkdirSync(outDir, { recursive: true });
 
-const EDGE = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
+// Chrome or Edge; BROWSER overrides (Edge sometimes refuses headless launches while it updates).
+const EDGE = process.env.BROWSER ?? "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const wanted = process.argv.slice(2);
 const pages = readdirSync(srcDir).filter((f) => f.endsWith(".html"))
   .filter((f) => !wanted.length || wanted.includes(f.replace(/\.html$/, "")));

@@ -1,0 +1,51 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="fig.css"></head>
+<body><div id="fig"></div>
+<script type="module">
+import { Diagram } from "./diagram.js";
+const d = new Diagram();
+const state = (id, x, y, w, name, act) =>
+  d.box(id, { x, y, w, cls: "state", html: `<div class="name">${name}</div>${act ? `<div class="act">${act}</div>` : ""}` });
+const C = 440, W = 320, R = 880;
+
+d.box("i", { x: C + W / 2 - 13, y: 20, w: 26, cls: "init" });
+state("key", 40, 100, 300, "Key choice", "a default key is built in (development builds)");
+state("prov", C, 100, W, "LLM provider", "choose provider, paste API key");
+state("roles", C, 290, W, "Team & roles", "only when there is no roles.json");
+state("desc", C, 450, W, "System description", "name and plain-language description");
+state("gen", C, 600, W, "Generating", "do / ArchitectureAgent drafts ARCH.md");
+state("err", 40, 615, 300, "Error", "message and Try Again");
+state("ready", C, 750, W, "Architecture ready", "ARCH.md written; components Planned");
+state("q", C, 920, W, "Topic question", "5 topics; a follow-up shows the earlier answer");
+state("an", R, 920, 300, "Analyzing", "do / one model call per answer");
+state("draft", R, 1110, 300, "Draft ADR", "editable; based on one or both answers");
+state("done", C, 1130, W, "Done", "ADRs saved, or pending approval");
+
+d.edge({ from: ["i", "left"], to: ["key", "top"], kind: "trans", label: "[default key available]", labelAt: { x: 300, y: 33 } });
+d.edge({ from: ["i", "bottom"], to: ["prov", "top"], kind: "trans", label: "[no key]", labelAt: { x: 655, y: 72 } });
+d.edge({ from: ["key", "right", 0.35], to: ["prov", "left", 0.35], kind: "trans", label: "Provide my<br>own key", labelCls: "wrap", labelAt: { x: 390, y: 168 } });
+d.edge({ from: ["key", "bottom", 0.5], to: ["roles", "left", 0.4], kind: "trans", label: "Use default API key", labelAt: { x: 190, y: 330 } });
+d.edge({ from: ["prov", "right", 0.3], to: ["prov", "right", 0.75], kind: "trans", via: [[C + W + 40, null]],
+         label: "key rejected:<br>inline error", labelCls: "wrap", labelAt: { x: C + W + 115, y: 150 } });
+d.edge({ from: ["prov", "bottom", 0.35], to: ["roles", "top", 0.35], kind: "trans", label: "Next [no roles.json]", labelAt: { x: 540, y: 240 } });
+d.edge({ from: ["prov", "bottom", 0.85], to: ["desc", "right", 0.3], kind: "trans", via: [[null, 250], [C + W + 70, null]],
+         label: "Next<br>[roles.json exists]", labelCls: "wrap", labelAt: { x: C + W + 150, y: 330 } });
+d.edge({ from: ["roles", "bottom"], to: ["desc", "top"], kind: "trans", label: "Continue (or Skip)" });
+d.edge({ from: ["desc", "bottom"], to: ["gen", "top"], kind: "trans", label: "Generate Architecture" });
+d.edge({ from: ["gen", "left", 0.5], to: ["err", "right", 0.5], kind: "trans", label: "[failure]" });
+d.edge({ from: ["err", "top", 0.5], to: ["desc", "left", 0.5], kind: "trans", label: "Try Again", labelAt: { x: 190, y: 530 } });
+d.edge({ from: ["gen", "bottom"], to: ["ready", "top"], kind: "trans", label: "[success]" });
+d.edge({ from: ["ready", "bottom"], to: ["q", "top"], kind: "trans", label: "Surface Constraints" });
+d.edge({ from: ["ready", "left", 0.5], to: ["done", "left", 0.5], kind: "trans", via: [[C - 50, null]],
+         label: "Done — View<br>ARCH.md", labelCls: "wrap", labelAt: { x: C - 120, y: 1000 } });
+d.edge({ from: ["q", "right", 0.3], to: ["an", "left", 0.3], kind: "trans", label: "Analyze", labelAt: { x: 820, y: 922 } });
+d.edge({ from: ["an", "left", 0.75], to: ["q", "right", 0.75], kind: "trans", label: "[follow-up]", labelAt: { x: 820, y: 1030 } });
+d.edge({ from: ["an", "bottom"], to: ["draft", "top"], kind: "trans", label: "[draft ready]" });
+d.edge({ from: ["draft", "left", 0.5], to: ["done", "right", 0.5], kind: "trans", label: "Save ADR / Discard<br>[last topic]", labelCls: "wrap", labelAt: { x: 820, y: 1250 } });
+d.edge({ from: ["q", "bottom"], to: ["done", "top"], kind: "trans", label: "Skip [last topic]" });
+d.text('<span class="note">After Save ADR, Discard or Skip on an earlier topic, the next topic question is shown; an answer with nothing concrete also moves on. A topic yields at most one ADR: with a follow-up, the draft waits for its answer.</span>',
+  { x: 40, y: 1310, w: 1120 });
+
+d.render();
+</script>
+</body></html>

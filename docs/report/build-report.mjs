@@ -6,6 +6,8 @@ import { join, dirname } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { section5 } from "./content/section5.mjs";
+import { section6 } from "./content/section6.mjs";
+import { section7 } from "./content/section7.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const docx = createRequire(join(process.env.REPORT_TOOLS ?? ".", "noop.js"))("docx");
@@ -47,16 +49,47 @@ const B = {
   bullet: (text, level = 0) => new Paragraph({ numbering: { reference: "bullets", level }, spacing: { after: 60, line: 288 }, children: runs(text) }),
   pageBreak: () => new Paragraph({ children: [new PageBreak()] }),
 
-  figure(file, caption) {
-    const png = readFileSync(join(here, "figures", file));
-    // PNG size from the IHDR chunk, to keep the aspect ratio.
-    const w = png.readUInt32BE(16), h = png.readUInt32BE(20);
+  /** A full-width figure; `widthIn` narrows it (screenshots of narrow panels). */
+  figure(file, caption, { widthIn } = {}) {
     return [
       new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 120, after: 60 }, keepNext: true,
-        children: [new ImageRun({ type: "png", data: png, transformation: { width: IMG_W_PX, height: Math.round(IMG_W_PX * h / w) },
-          altText: { title: caption, description: caption, name: file } })] }),
-      new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 240 },
-        children: runs(caption, { italics: true, size: 20 }) }),
+        children: [image(file, caption, widthIn ? widthIn * 96 : IMG_W_PX)] }),
+      captionPara(caption),
+    ];
+  },
+
+  /** Images side by side, each with an "(a) label" underneath, under one caption. */
+  figureRow(items, caption) {
+    const colW = Math.floor(TEXT_W / items.length);
+    const none = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
+    const borders = { top: none, bottom: none, left: none, right: none };
+    const imgPx = Math.floor((colW / 1440) * 96) - 14;
+    return [
+      new Table({
+        width: { size: colW * items.length, type: WidthType.DXA }, columnWidths: items.map(() => colW),
+        borders: { top: none, bottom: none, left: none, right: none, insideHorizontal: none, insideVertical: none },
+        rows: [new TableRow({ cantSplit: true, children: items.map((it) => new TableCell({
+          borders, width: { size: colW, type: WidthType.DXA }, verticalAlign: "top",
+          margins: { top: 40, bottom: 40, left: 60, right: 60 },
+          children: [
+            new Paragraph({ alignment: AlignmentType.CENTER, children: [image(it.file, it.label, imgPx)] }),
+            new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 60 }, children: runs(it.label, { size: 19 }) }),
+          ],
+        })) })],
+      }),
+      captionPara(caption),
+    ];
+  },
+
+  /** Images stacked vertically (same width), each labelled, under one caption. */
+  figureStack(items, caption, { widthIn } = {}) {
+    const px = widthIn ? widthIn * 96 : IMG_W_PX;
+    return [
+      ...items.flatMap((it) => [
+        new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 100 }, keepNext: true, children: [image(it.file, it.label, px)] }),
+        new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 60 }, keepNext: true, children: runs(it.label, { size: 19 }) }),
+      ]),
+      captionPara(caption),
     ];
   },
 
@@ -87,7 +120,7 @@ const B = {
         width: { size: TEXT_W, type: WidthType.DXA }, columnWidths: scaled,
         rows: [
           new TableRow({ tableHeader: true, children: headers.map((h, i) => cell(h, i, true)) }),
-          ...rows.map((r) => new TableRow({ cantSplit: false, children: r.map((c, i) => cell(c, i, false)) })),
+          ...rows.map((r) => new TableRow({ cantSplit: true, children: r.map((c, i) => cell(c, i, false)) })),
         ],
       }),
       new Paragraph({ spacing: { after: 160 }, children: [] }),
@@ -95,9 +128,21 @@ const B = {
   },
 };
 
+function image(file, alt, widthPx) {
+  const png = readFileSync(join(here, "figures", file));
+  // PNG size from the IHDR chunk, to keep the aspect ratio.
+  const w = png.readUInt32BE(16), h = png.readUInt32BE(20);
+  return new ImageRun({ type: "png", data: png, transformation: { width: Math.round(widthPx), height: Math.round(widthPx * h / w) },
+    altText: { title: alt, description: alt, name: file } });
+}
+
+function captionPara(caption) {
+  return new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 60, after: 240 }, children: runs(caption, { italics: true, size: 20 }) });
+}
+
 // ── Document ──────────────────────────────────────────────────────────────────
 
-const body = [...section5(B)];
+const body = [...section5(B), B.pageBreak(), ...section6(B), B.pageBreak(), ...section7(B)];
 
 const doc = new Document({
   creator: "BluePrint project",

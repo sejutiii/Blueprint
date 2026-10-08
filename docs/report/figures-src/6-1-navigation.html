@@ -1,0 +1,50 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="fig.css"></head>
+<body><div id="fig"></div>
+<script type="module">
+import { Diagram } from "./diagram.js";
+const d = new Diagram();
+const box = (id, cls, x, y, w, t, s) => d.box(id, { x, y, w, cls, html: `<div class="t">${t}</div>${s ? `<div class="s">${s}</div>` : ""}` });
+
+// Entry points (VS Code surfaces)
+box("sb", "entry", 20, 40, 280, "Status bar item", "click: Hub, Initialize, or the last review");
+box("et", "entry", 20, 190, 280, "Editor title button", "opens the Hub");
+box("cp", "entry", 20, 310, 280, "Command palette", "every BluePrint command");
+d.box("adrb", { x: 20, y: 680, w: 280, h: 160, cls: "entry", html: `<div class="t">Sidebar: ADR Browser</div><div class="s">+ Add · Search · Filter · Approve / Reject</div>` });
+box("auds", "entry", 20, 880, 280, "Sidebar: Audit Trail", "latest 20 entries");
+
+// Hub
+d.box("hub", { x: 390, y: 150, w: 290, title: "Hub", attrs: [
+  "Initialize (before setup)", "Review my changes", "Pre-check a prompt", "View architecture",
+  "Add a decision", "Audit trail", "Team & roles", "Change LLM provider",
+] });
+
+// Panels and dialogs
+const P = 820, PW = 360;
+box("setup", "panelbox", P, 20, PW, "Setup Wizard", "provider, roles, ARCH.md, questions");
+box("comp", "panelbox", P, 118, PW, "Compliance Review");
+box("pre", "panelbox", P, 188, PW, "Pre-Check");
+box("dec", "panelbox", P, 258, PW, "Add Decision");
+box("arch", "panelbox", P, 328, PW, "ARCH.md Viewer", "Edit source · Revert · Regenerate");
+box("roles", "panelbox", P, 426, PW, "Team & Roles");
+box("prov", "panelbox", P, 496, PW, "Change LLM provider", "quick pick + API key input");
+box("adrdoc", "panelbox", P, 676, PW, "ADR document", "opened in the editor");
+box("dlg", "panelbox", P, 772, PW, "Approve / Reject", "confirmation, reason input");
+box("audp", "panelbox", P, 880, PW, "Audit Trail panel", "Decisions and Activity tabs");
+
+d.edge({ from: ["sb", "right", 0.5], to: ["hub", "left", 0.1], kind: "flow", label: "click (idle)", labelAt: { x: 345, y: 50 } });
+d.edge({ from: ["et", "right", 0.5], to: ["hub", "left", 0.4], kind: "flow" });
+d.edge({ from: ["cp", "right", 0.5], to: ["hub", "left", 0.62], kind: "flow" });
+// One bus from the Hub to the panels its cards and links open (the Audit trail link opens the panel at the bottom).
+for (const id of ["setup", "comp", "pre", "dec", "arch", "roles", "prov"]) {
+  d.edge({ from: ["hub", "right", 0.5], to: [id, "left"], kind: "flow", via: [[745, null]] });
+}
+d.edge({ from: ["adrb", "right", 0.22], to: ["adrdoc", "left", 0.5], kind: "flow", label: "click an ADR", labelAt: { x: 560, y: 693 } });
+d.edge({ from: ["adrb", "right", 0.82], to: ["dlg", "left", 0.5], kind: "flow", label: "✓ / ✕ on a pending ADR", labelAt: { x: 560, y: 788 } });
+d.edge({ from: ["auds", "right", 0.5], to: ["audp", "left", 0.5], kind: "flow", label: "history icon", labelAt: { x: 560, y: 896 } });
+d.text('<span class="note">The command palette reaches every panel and action directly. Before setup the status bar opens Initialize; while it shows a violation it reopens the last review.</span>',
+  { x: 20, y: 1000, w: 1160 });
+
+d.render();
+</script>
+</body></html>
