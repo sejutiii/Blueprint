@@ -21,6 +21,7 @@ export function parseUnifiedDiff(raw: string): FileDiff[] {
   let oldPath: string | null = null;
   let renameFrom: string | null = null;
   let renameTo: string | null = null;
+  let headerPath: string | null = null;
   let sawTarget = false;
 
   const fileFor = (path: string): FileDiff => {
@@ -32,10 +33,15 @@ export function parseUnifiedDiff(raw: string): FileDiff[] {
     return file;
   };
 
-  // A pure rename has no ---/+++ lines; record it from the rename header instead.
+  // A pure rename, or adding/deleting an empty file, has no ---/+++ lines; record it from the headers.
   const closeBlock = () => {
-    if (!sawTarget && renameFrom && renameTo) {
+    if (sawTarget) { return; }
+    if (renameFrom && renameTo) {
       fileFor(renameTo).renamedFrom = renameFrom;
+    } else if (headerPath && (pendingNew || pendingDeleted)) {
+      const file = fileFor(headerPath);
+      file.isNew = file.isNew || pendingNew;
+      file.isDeleted = pendingDeleted;
     }
   };
 
@@ -45,6 +51,7 @@ export function parseUnifiedDiff(raw: string): FileDiff[] {
       current = null;
       pendingNew = pendingDeleted = sawTarget = false;
       oldPath = renameFrom = renameTo = null;
+      headerPath = samePathFromHeader(line.slice(11));
       continue;
     }
     if (line.startsWith("new file mode"))     { pendingNew = true; continue; }
@@ -91,6 +98,15 @@ export function parseUnifiedDiff(raw: string): FileDiff[] {
   closeBlock();
 
   return [...files.values()];
+}
+
+// "a/<p> b/<p>" → <p>, for blocks whose old and new path match. Splitting in the middle (rather
+// than on " b/") keeps paths with spaces intact. Renames are read from their own headers.
+function samePathFromHeader(rest: string): string | null {
+  const len = (rest.length - 5) / 2;
+  if (!Number.isInteger(len) || len < 1 || !rest.startsWith("a/")) { return null; }
+  const a = rest.slice(2, 2 + len);
+  return rest.slice(2 + len) === ` b/${a}` ? a : null;
 }
 
 /** Keep only the per-file blocks of a unified diff whose post-change path passes `keep`. */

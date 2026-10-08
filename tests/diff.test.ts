@@ -57,6 +57,13 @@ describe("parseUnifiedDiff", () => {
     expect(files[1].addedText).toEqual(["y"]);
   });
 
+  it("records adding or deleting an empty file (git prints no ---/+++ lines for these)", () => {
+    const deleted = "diff --git a/code.py b/code.py\ndeleted file mode 100644\nindex e69de29..0000000\n";
+    const added   = "diff --git a/my notes.txt b/my notes.txt\nnew file mode 100644\nindex 0000000..e69de29\n";
+    const files = parseUnifiedDiff(deleted + added);
+    expect(files.map((f) => [f.path, f.isNew, f.isDeleted])).toEqual([["code.py", false, true], ["my notes.txt", true, false]]);
+  });
+
   it("merges a file that appears in both staged and unstaged diffs", () => {
     const twice = "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1,2 @@\n x\n+y\n" +
                   "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -5 +5,2 @@\n z\n+w\n";
