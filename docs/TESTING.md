@@ -91,6 +91,7 @@ Run with F5, then open one of the projects in `test/`. A free Gemini or Groq key
 - [ ] Generate the architecture; the sidebar appears (T3).
 - [ ] Answer a concrete constraint ("We use PostgreSQL"): a draft appears, editable, and a follow-up question comes next. Save with an empty title → inline error.
 - [ ] Re-run Initialize: a confirmation dialog appears; after confirming, Revert ARCH.md lists the old version (T15).
+- [ ] BluePrint: Change LLM Provider / API Key (palette or ADR Browser "…" menu): the current provider is marked; the key icon opens the key page; a bad key shows the error inline and keeps the box open; a good key saves and the next review uses the new provider. Escape while checking saves nothing.
 
 **Add Decision**
 - [ ] Close the wizard right after ARCH.md is generated. Sidebar **+** (or Hub → Add Decision) → "Answer the guided questions instead" reopens just the questions; ARCH.md is not regenerated.

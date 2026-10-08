@@ -81,6 +81,11 @@
         "title": "BluePrint: Show Last Compliance Review"
       },
       {
+        "command": "blueprint.changeProvider",
+        "title": "BluePrint: Change LLM Provider / API Key",
+        "icon": "$(key)"
+      },
+      {
         "command": "blueprint.configureRoles",
         "title": "BluePrint: Configure Team & Roles",
         "icon": "$(organization)"
@@ -238,6 +243,11 @@
         },
         {
           "command": "blueprint.guidedQuestions",
+          "when": "view == blueprint.adrBrowser",
+          "group": "overflow"
+        },
+        {
+          "command": "blueprint.changeProvider",
           "when": "view == blueprint.adrBrowser",
           "group": "overflow"
         }

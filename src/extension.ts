@@ -94,6 +94,7 @@ export function activate(context: vscode.ExtensionContext): void {
   register("blueprint.filterAdrs",     () => handleFilterAdrs());
   register("blueprint.clearAdrFilter", () => setAdrFilter(""));
   register("blueprint.configureRoles", () => handleConfigureRoles());
+  register("blueprint.changeProvider", () => handleChangeProvider(context));
   register("blueprint.revertArch",     () => handleRevertArch());
   register("blueprint.regenerateArch", () => handleRegenerateArch());
   register("blueprint.addDecision",    () => handleAddDecision(context));
@@ -870,6 +871,59 @@ async function handleFilterAdrs(): Promise<void> {
 async function setAdrFilter(query: string): Promise<void> {
   adrTreeProvider.setFilter(query.trim());
   await vscode.commands.executeCommand("setContext", "blueprint.adrFilterActive", !!query.trim());
+}
+
+// Provider and key live in this machine's SecretStorage, not the repo, so anyone may change them
+// and nothing is audited. As in the wizard, a key is saved only after one request with it worked.
+async function handleChangeProvider(context: vscode.ExtensionContext): Promise<void> {
+  const current = await context.secrets.get("blueprint.provider");
+  const providers = Object.keys(PROVIDER_LABELS) as Provider[];
+  const picked = await vscode.window.showQuickPick(
+    providers.map((p) => ({
+      label:       PROVIDER_LABELS[p],
+      description: p === current ? "current" : PROVIDER_KEY_PAGES[p].free ? "free tier" : "paid",
+      detail:      `Model: ${LLMClient.modelFor(p)}`,
+      provider:    p,
+    })),
+    { placeHolder: "Choose the LLM provider BluePrint should use", title: "BluePrint: Change LLM Provider / API Key" }
+  );
+  if (!picked) { return; }
+  const { provider } = picked;
+  const label = PROVIDER_LABELS[provider];
+
+  const input = vscode.window.createInputBox();
+  const keyPage: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon("link-external"), tooltip: `Get a ${label} API key` };
+  input.title    = `BluePrint: ${label} API key`;
+  input.prompt   = `Paste your ${label} API key. It is checked with one small request, then stored in VS Code's secret storage.`;
+  input.password = true;
+  input.ignoreFocusOut = true;
+  input.buttons  = [keyPage];
+
+  const saved = await new Promise<boolean>((resolve) => {
+    let closed = false; // Escape during validation must not save the key afterwards
+    input.onDidTriggerButton(() => { void vscode.env.openExternal(vscode.Uri.parse(PROVIDER_KEY_PAGES[provider].url)); });
+    input.onDidChangeValue(() => { input.validationMessage = undefined; });
+    input.onDidAccept(async () => {
+      const apiKey = input.value.trim();
+      if (!apiKey) { input.validationMessage = "Paste a key first."; return; }
+      input.busy = true;
+      input.enabled = false;
+      const problem = await new LLMClient(provider, apiKey).validate();
+      input.busy = false;
+      input.enabled = true;
+      if (closed) { return; }
+      if (problem) { input.validationMessage = problem; return; }
+      await LLMClient.saveToSecrets(context.secrets, provider, apiKey);
+      resolve(true);
+      input.hide();
+    });
+    input.onDidHide(() => { closed = true; resolve(false); input.dispose(); });
+    input.show();
+  });
+
+  if (saved) {
+    vscode.window.showInformationMessage(`BluePrint: Now using ${label} (${LLMClient.modelFor(provider)}).`);
+  }
 }
 
 async function handleConfigureRoles(): Promise<void> {
