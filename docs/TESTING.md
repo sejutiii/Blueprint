@@ -130,6 +130,7 @@ Run with F5, then open one of the projects in `test/`. A free Gemini or Groq key
 
 **Viewers**
 - [ ] Audit trail: Decisions newest first, search by file name, Activity filters; it updates while open (T50–T53).
+- [ ] Sidebar "Audit Trail": the latest reviews, pre-checks, decisions and ARCH.md changes (not the ADR list), newest first, updating as they happen. A decision entry opens its ADR; others open the full trail; the history icon in the view title opens it too.
 - [ ] ARCH.md viewer: recent sections highlighted; Edit source / Revert / Regenerate; edits to ARCH.md re-render.
 
 **Packaging**

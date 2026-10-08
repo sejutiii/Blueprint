@@ -110,7 +110,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   registerAutoReview(context);
 
-  const unsubscribe = AuditLog.onAppend(() => { void pushAuditTrail(); });
+  const unsubscribe = AuditLog.onAppend(() => { void pushAuditTrail(); void refreshAuditSidebar(); });
   context.subscriptions.push({ dispose: unsubscribe });
 
   const folder = vscode.workspace.workspaceFolders?.[0];
@@ -120,6 +120,8 @@ export function activate(context: vscode.ExtensionContext): void {
     // Decisions, roles and initialization can change under us (a teammate's commit after git pull,
     // or a hand edit of roles.json), so the sidebar, pending count and role are re-read from disk.
     watchFiles(context, folder, ".blueprint/{adr-index.json,roles.json,arch.json}", () => checkInitialized());
+    // A teammate's reviews and decisions arrive in the audit log the same way.
+    watchFiles(context, folder, ".blueprint/audit-log.json", async () => { await refreshAuditSidebar(); await pushAuditTrail(); });
   }
 }
 
@@ -178,11 +180,17 @@ async function refreshProviders(): Promise<void> {
   const adrStore = AdrStore.fromWorkspace();
   const adrs     = adrStore ? await adrStore.getAll() : [];
   adrTreeProvider.refresh(adrs);
-  auditTrailProvider.refresh(adrs);
+  await refreshAuditSidebar(adrs);
   statusBar.setPending(adrs.filter((a) => a.status === "proposed").length);
   await refreshRoles();
   statusBar.refreshIdle();
   await pushAuditTrail();
+}
+
+// The sidebar's recent activity; entries about a decision link to its ADR.
+async function refreshAuditSidebar(adrs?: ADR[]): Promise<void> {
+  const entries = (await AuditLog.fromWorkspace()?.getAll()) ?? [];
+  auditTrailProvider.refresh(entries, adrs ?? (await AdrStore.fromWorkspace()?.getAll()) ?? []);
 }
 
 // Safe to call any time (activation, file watcher): it never interrupts a Checking/Violation state.
