@@ -4,11 +4,35 @@
   "description": "Architecture-aware AI-assisted development with persistent architectural knowledge",
   "version": "0.1.0",
   "publisher": "blueprint-dev",
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#1b4f8f",
+    "theme": "dark"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sejutiii/Blueprint.git"
+  },
+  "bugs": {
+    "url": "https://github.com/sejutiii/Blueprint/issues"
+  },
+  "homepage": "https://github.com/sejutiii/Blueprint#readme",
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
+    "AI",
+    "Linters",
     "Other"
+  ],
+  "keywords": [
+    "architecture",
+    "adr",
+    "architecture decision records",
+    "ai",
+    "llm",
+    "code review",
+    "compliance"
   ],
   "activationEvents": [
     "onStartupFinished"

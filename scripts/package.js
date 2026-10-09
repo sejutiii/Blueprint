@@ -79,8 +79,8 @@ function packageTarget(target) {
   const out = path.join(OUT_DIR, `blueprint-${target}.vsix`);
   const targetFlag = target === "universal" ? "" : `--target ${target}`;
   // --no-dependencies: vsce must not add the root node_modules; the runtime is already staged.
-  // TODO(P1): drop --allow-missing-repository/--skip-license once README, LICENSE and repository exist.
-  run(`npx vsce package ${targetFlag} --no-dependencies --allow-missing-repository --skip-license --out "${out}"`);
+  // No LICENSE for now (D14), so vsce must not stop to ask about one.
+  run(`npx vsce package ${targetFlag} --no-dependencies --skip-license --out "${out}"`);
   return out;
 }
 

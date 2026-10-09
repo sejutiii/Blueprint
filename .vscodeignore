@@ -12,6 +12,7 @@ esbuild.js
 tsconfig.json
 **/*.map
 **/*.ts.orig
+media/icon.svg
 
 # Secrets — never package. The production build also refuses to embed API keys.
 .env

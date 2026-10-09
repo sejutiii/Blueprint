@@ -9,7 +9,7 @@
 2. **Finish the manual checklist** ← *next* in [docs/TESTING.md](docs/TESTING.md) (F5, projects in `test/`). *Partly run* (paused 2026-10-08): the developer tried reviews, the wizard and extension detection, which found M3–M5 (all fixed); no checklist items are ticked yet. Restart the Extension Development Host first so it runs the latest build.
 3. ~~**E6** top-K~~ — done 2026-10-09.
 4. **E5** non-git diff fallback — present a plan first. (Since M3 the panel already says "not a git repository / run git init".)
-5. **P1** README / CHANGELOG / `repository` / icon — **no license for now** (D14): no LICENSE file, no `license` field, no mention in the README, so `--skip-license` stays in `scripts/package.js`; `--allow-missing-repository` goes once `repository` is set. Repeat the roles honour-system note in the README (U15).
+5. ~~**P1** README / CHANGELOG / `repository` / icon~~ — done 2026-10-09 (no license, D14).
 6. **Publish to the VS Code Marketplace** (D14) after the manual checklist passes: per-platform `vsce publish --target`. Needs the developer's publisher account and token.
 7. **P2** update the SRS where behaviour deliberately changed (D1–D13 below; T34 and T49 in particular) and write the project's own ARCH.md (see the `.gitignore` note under P3).
 8. *Optional:* let the developer rename a detected extension before registering it (the model's names vary run to run); **F1** under Future extensions.
@@ -130,7 +130,7 @@ Legend: `[ ]` todo · `[x]` done · **SRS** = section/test-case it satisfies.
 
 ## Phase 5 — Packaging & docs
 
-- [ ] **P1** `README.md`, `LICENSE`, `CHANGELOG.md`, extension icon, `repository`/`license`/`galleryBanner` in package.json; `vsce package` produces a working VSIX (verify the contents).
+- [x] **P1** (2026-10-09) `README.md` (GitHub + Marketplace page; roles honour-system note; screenshot spots marked with HTML comments), `CHANGELOG.md`, icon `media/icon.png` (source `media/icon.svg`, not packaged), `repository`/`bugs`/`homepage`/`galleryBanner`/categories/keywords in package.json. No LICENSE or `license` field (D14), so `--skip-license` stays; `--allow-missing-repository` removed. `npm run package` builds without warnings; the VSIX has readme, changelog and icon, and no `.env`.
 - [ ] **P2** Update the SRS test-plan wording where behavior intentionally differs from the code (e.g. T7 says gemini-2.0-flash; T5 etc.), and write the project's own living `ARCH.md`.
 - [x] **P3** `test/` fixtures (nested `.git`) are in `.gitignore` (2026-10-08). Confirmed the extension never writes `.gitignore` or `.git/info/exclude` (it only reads ignore rules via `git ls-files --exclude-standard`), so a user's `.blueprint/`, `docs/adr/`, `docs/ARCH.md` stay version-controlled. *Note for P2:* this dev repo's `.gitignore` excludes `docs/ARCH.md`, `docs/adr/` and `.blueprint/`, so BluePrint's own living ARCH.md needs those lines removed (or another location).
 
