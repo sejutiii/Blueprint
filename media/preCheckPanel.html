@@ -131,6 +131,42 @@
     }
 
     .hidden { display: none !important; }
+
+    .verdict-clean {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 14px; margin-bottom: 18px; border-radius: 5px;
+      background: rgba(76,175,80,0.10);
+      border: 1px solid rgba(76,175,80,0.35);
+    }
+    .verdict-clean .clean-icon { width: 28px; height: 28px; font-size: 14px; margin: 0; flex-shrink: 0; }
+    .verdict-clean p { font-size: 12px; color: var(--vscode-descriptionForeground); margin-top: 2px; }
+
+    .section { margin-top: 22px; }
+    .section h3 { margin-bottom: 4px; }
+    .section .subtitle { margin-bottom: 10px; }
+
+    .revised-card {
+      border: 1px solid var(--vscode-focusBorder);
+      border-radius: 5px; padding: 12px 14px;
+      background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+    }
+    .revised-text {
+      font-family: var(--vscode-editor-font-family); font-size: 12px; line-height: 1.5;
+      white-space: pre-wrap; word-break: break-word; margin-bottom: 10px;
+    }
+
+    .adr-item input[type="checkbox"] { accent-color: var(--vscode-button-background); flex-shrink: 0; }
+    .adr-tag {
+      font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 3px; white-space: nowrap;
+      background: var(--vscode-badge-background); color: var(--vscode-badge-foreground);
+    }
+    .adr-tag.cited { background: rgba(230,168,23,0.18); color: #e6a817; }
+    details.less-relevant { margin-top: 8px; font-size: 12px; }
+    details.less-relevant summary { cursor: pointer; color: var(--vscode-descriptionForeground); user-select: none; margin-bottom: 6px; }
+    .copy-row { margin-top: 12px; }
+    .status-note { font-size: 12px; color: var(--vscode-descriptionForeground); }
+    .status-note.error { color: var(--vscode-errorForeground); }
+    .actions { margin-top: 26px; padding-top: 14px; border-top: 1px solid var(--vscode-panel-border, var(--vscode-input-border)); }
   </style>
 </head>
 <body>
@@ -149,6 +185,7 @@
     <div class="btn-row">
       <button id="btn-check">Check Architecture</button>
       <button class="btn-secondary" id="btn-view-arch">View ARCH.md</button>
+      <span class="status-note">Ctrl+Enter to check</span>
     </div>
   </div>
 
@@ -161,35 +198,48 @@
     </div>
   </div>
 
-  <!-- Retrieved ADRs (shown alongside either result below, regardless of conflicts) -->
-  <div id="retrieved-adrs" class="retrieved-adrs hidden">
-    <h3>ADRs Considered</h3>
-    <p class="subtitle">The retrieval system judged these ADRs most relevant to your prompt.</p>
-    <div id="retrieved-adrs-list"></div>
-  </div>
+  <!-- Result: verdict, optional revision, context to attach -->
+  <div id="screen-result" class="hidden">
 
-  <!-- Clean -->
-  <div id="screen-clean" class="hidden">
-    <div class="clean-wrap">
+    <div id="verdict-clean" class="verdict-clean hidden">
       <div class="clean-icon">✓</div>
-      <h2>No architectural conflicts found</h2>
-      <p>Your prompt is consistent with your architecture and decisions.</p>
+      <div>
+        <strong>No architectural conflicts found</strong>
+        <p>Your prompt is consistent with your architecture and decisions.</p>
+      </div>
     </div>
-    <div style="text-align:center;margin-top:24px">
-      <button id="btn-check-another-clean">Check Another Prompt</button>
-    </div>
-  </div>
 
-  <!-- Conflicts -->
-  <div id="screen-conflicts" class="hidden">
-    <div class="conflicts-header">
-      <h2>Pre-Flight Concerns</h2>
-      <span class="conflicts-count" id="conflicts-count"></span>
+    <div id="verdict-conflicts" class="hidden">
+      <div class="conflicts-header">
+        <h2>Pre-Flight Concerns</h2>
+        <span class="conflicts-count" id="conflicts-count"></span>
+      </div>
+      <p class="subtitle">These concerns are based on your stated intent. No code has been written yet.</p>
+      <div id="conflict-list"></div>
     </div>
-    <p class="subtitle">These concerns are based on your stated intent — no code has been written yet. Review them before proceeding.</p>
-    <div id="conflict-list"></div>
-    <div style="margin-top:20px">
-      <button id="btn-check-another-conflicts">Check Another Prompt</button>
+
+    <div id="revised-section" class="section hidden">
+      <h3>Suggested revision</h3>
+      <p class="subtitle">Your prompt, adjusted to stay within the architecture.</p>
+      <div class="revised-card">
+        <div class="revised-text" id="revised-text"></div>
+        <button id="btn-use-revised">Use this prompt</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Attach architectural context</h3>
+      <p class="subtitle">Copy your prompt together with the selected ADRs and the ARCH.md constraints, then paste it into your AI assistant.</p>
+      <div id="adr-list"></div>
+      <div class="btn-row copy-row">
+        <button id="btn-copy">Copy prompt with context</button>
+        <span class="status-note" id="copy-status"></span>
+      </div>
+    </div>
+
+    <div class="btn-row actions">
+      <button class="btn-secondary" id="btn-revise">Revise prompt</button>
+      <button class="btn-secondary" id="btn-check-another">Check another prompt</button>
     </div>
   </div>
 
@@ -200,14 +250,14 @@
       <pre id="error-message"></pre>
     </div>
     <div style="margin-top:14px">
-      <button id="btn-check-another-error">Try Again</button>
+      <button id="btn-error-back">Back to prompt</button>
     </div>
   </div>
 
 <script nonce="{{nonce}}">
   const vscode = acquireVsCodeApi();
 
-  const allScreens = ['screen-input','screen-checking','screen-clean','screen-conflicts','screen-error'];
+  const allScreens = ['screen-input', 'screen-checking', 'screen-result', 'screen-error'];
   function showScreen(id) {
     allScreens.forEach(s => document.getElementById(s).classList.add('hidden'));
     document.getElementById(id).classList.remove('hidden');
@@ -217,50 +267,19 @@
     return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
-  let retrievedAdrMap = {};
-
-  function buildAdrItemHtml(a) {
-    return `<div class="adr-item">
-      <span class="adr-id">ADR-${esc(a.id)}</span>
-      <span class="adr-title">${esc(a.title)}</span>
-      <button class="btn-open" data-adr-id="${esc(a.id)}">Open</button>
-    </div>`;
-  }
-
-  function renderRetrievedAdrs(adrs) {
-    const panel = document.getElementById('retrieved-adrs');
-    const list  = document.getElementById('retrieved-adrs-list');
-
-    retrievedAdrMap = {};
-    (adrs || []).forEach(a => { retrievedAdrMap[a.id] = a; });
-
-    list.innerHTML = adrs && adrs.length
-      ? adrs.map(buildAdrItemHtml).join('')
-      : '<p class="adr-empty">No ADRs were found to be relevant to this prompt.</p>';
-
-    list.querySelectorAll('.btn-open').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const adr = retrievedAdrMap[btn.dataset.adrId];
-        if (adr) { vscode.postMessage({ command: 'openAdr', adr }); }
-      });
-    });
-
-    panel.classList.remove('hidden');
-  }
-
-  function hideRetrievedAdrs() {
-    document.getElementById('retrieved-adrs').classList.add('hidden');
-  }
+  const input = document.getElementById('prompt-input');
+  let checkedPrompt = '';   // the prompt the current result belongs to
+  let adrsById = {};
 
   function buildConflictHtml(c) {
-    const sev = (c.severity || 'medium').toLowerCase();
-    const badge = sev === 'high' ? 'badge-high' : sev === 'low' ? 'badge-low' : 'badge-medium';
+    const raw = String(c.severity || '').toLowerCase();
+    const sev = ['high', 'medium', 'low'].includes(raw) ? raw : 'medium';
     return `<div class="conflict-card ${sev}">
       <div class="conflict-header">
-        <span class="severity-badge ${badge}">${sev.toUpperCase()}</span>
-        <span class="constraint-ref">${esc(c.constraintId || '')}</span>
+        <span class="severity-badge badge-${sev}">${sev.toUpperCase()}</span>
+        <span class="constraint-ref">${esc(c.constraintId)}</span>
       </div>
-      <p class="conflict-description">${esc(c.description || '')}</p>
+      <p class="conflict-description">${esc(c.description)}</p>
       ${c.suggestion ? `<div class="suggestion-box">
         <span class="suggestion-label">SUGGESTION</span>
         ${esc(c.suggestion)}
@@ -268,62 +287,142 @@
     </div>`;
   }
 
-  function runCheck() {
-    const text = document.getElementById('prompt-input').value.trim();
-    if (!text) {
-      document.getElementById('prompt-input').focus();
+  // Selected by default: ADRs a concern cites, and ADRs above the relevance threshold.
+  function buildAdrItemHtml(item) {
+    const a = item.adr;
+    const checked = item.cited || item.relevant ? 'checked' : '';
+    const tag = item.cited
+      ? '<span class="adr-tag cited">cited by a concern</span>'
+      : item.relevant ? '<span class="adr-tag">relevant</span>' : '';
+    return `<label class="adr-item">
+      <input type="checkbox" data-adr-id="${esc(a.id)}" ${checked}>
+      <span class="adr-id">ADR-${esc(a.id)}</span>
+      <span class="adr-title">${esc(a.title)}</span>
+      ${tag}
+      <button class="btn-open" data-open-id="${esc(a.id)}">Open</button>
+    </label>`;
+  }
+
+  function renderAdrs(items) {
+    adrsById = {};
+    (items || []).forEach(i => { adrsById[i.adr.id] = i.adr; });
+
+    const primary = (items || []).filter(i => i.cited || i.relevant);
+    const others  = (items || []).filter(i => !i.cited && !i.relevant);
+    const list = document.getElementById('adr-list');
+
+    if (!primary.length && !others.length) {
+      list.innerHTML = '<p class="adr-empty">No accepted ADRs yet. Only the ARCH.md constraints will be attached.</p>';
       return;
     }
+    list.innerHTML =
+      (primary.length
+        ? primary.map(buildAdrItemHtml).join('')
+        : '<p class="adr-empty">No ADR is clearly relevant to this prompt. Only the ARCH.md constraints will be attached unless you select one below.</p>') +
+      (others.length
+        ? `<details class="less-relevant"><summary>Less relevant (${others.length})</summary>${others.map(buildAdrItemHtml).join('')}</details>`
+        : '');
+  }
+
+  function selectedAdrIds() {
+    return [...document.querySelectorAll('#adr-list input[type="checkbox"]:checked')].map(cb => cb.dataset.adrId);
+  }
+
+  function setCopyStatus(text, isError) {
+    const el = document.getElementById('copy-status');
+    el.textContent = text;
+    el.classList.toggle('error', !!isError);
+  }
+
+  function runCheck() {
+    const text = input.value.trim();
+    if (!text) { input.focus(); return; }
+    checkedPrompt = text;
     document.getElementById('btn-check').disabled = true;
     showScreen('screen-checking');
     vscode.postMessage({ command: 'check', promptText: text });
   }
 
-  function goBackToInput() {
+  // Revise: keep the text so the developer can edit and re-check (SRS 3.3.1 step 4b-i).
+  function backToInput(clear) {
     document.getElementById('btn-check').disabled = false;
-    hideRetrievedAdrs();
+    if (clear) { input.value = ''; }
     showScreen('screen-input');
-    document.getElementById('prompt-input').focus();
+    input.focus();
   }
 
   document.getElementById('btn-check').addEventListener('click', runCheck);
-  document.getElementById('prompt-input').addEventListener('keydown', (e) => {
+  input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { runCheck(); }
   });
+  document.getElementById('btn-view-arch').addEventListener('click', () => vscode.postMessage({ command: 'openArch' }));
+  document.getElementById('btn-revise').addEventListener('click', () => backToInput(false));
+  document.getElementById('btn-check-another').addEventListener('click', () => backToInput(true));
+  document.getElementById('btn-error-back').addEventListener('click', () => backToInput(false));
 
-  document.getElementById('btn-view-arch').addEventListener('click', () => {
-    vscode.postMessage({ command: 'openArch' });
+  document.getElementById('btn-use-revised').addEventListener('click', () => {
+    input.value = document.getElementById('revised-text').textContent;
+    backToInput(false);
   });
 
-  document.getElementById('btn-check-another-clean').addEventListener('click', goBackToInput);
-  document.getElementById('btn-check-another-conflicts').addEventListener('click', goBackToInput);
-  document.getElementById('btn-check-another-error').addEventListener('click', goBackToInput);
+  document.getElementById('btn-copy').addEventListener('click', () => {
+    setCopyStatus('');
+    document.getElementById('btn-copy').disabled = true;
+    vscode.postMessage({ command: 'copyWithContext', promptText: checkedPrompt, adrIds: selectedAdrIds() });
+  });
+
+  document.getElementById('adr-list').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-open-id]');
+    if (!btn) return;
+    e.preventDefault(); // don't toggle the checkbox of the surrounding label
+    const adr = adrsById[btn.dataset.openId];
+    if (adr) { vscode.postMessage({ command: 'openAdr', adr }); }
+  });
 
   window.addEventListener('message', ({ data: msg }) => {
     switch (msg.command) {
 
       case 'checking':
-        hideRetrievedAdrs();
         showScreen('screen-checking');
         break;
 
       case 'result': {
-        const { result, retrievedAdrs } = msg;
-        renderRetrievedAdrs(retrievedAdrs);
-        if (!result.hasConflicts || !result.conflicts?.length) {
-          showScreen('screen-clean');
-        } else {
+        const { result, adrs } = msg;
+        const conflicts = result.conflicts || [];
+        const hasConflicts = conflicts.length > 0;
+
+        document.getElementById('verdict-clean').classList.toggle('hidden', hasConflicts);
+        document.getElementById('verdict-conflicts').classList.toggle('hidden', !hasConflicts);
+        if (hasConflicts) {
           document.getElementById('conflicts-count').textContent =
-            result.conflicts.length + ' concern' + (result.conflicts.length !== 1 ? 's' : '');
-          document.getElementById('conflict-list').innerHTML =
-            result.conflicts.map(buildConflictHtml).join('');
-          showScreen('screen-conflicts');
+            conflicts.length + ' concern' + (conflicts.length !== 1 ? 's' : '');
+          document.getElementById('conflict-list').innerHTML = conflicts.map(buildConflictHtml).join('');
         }
+
+        const revised = hasConflicts && result.revisedPrompt ? result.revisedPrompt : '';
+        document.getElementById('revised-text').textContent = revised;
+        document.getElementById('revised-section').classList.toggle('hidden', !revised);
+
+        renderAdrs(adrs);
+        setCopyStatus('');
+        document.getElementById('btn-copy').disabled = false;
+        showScreen('screen-result');
         break;
       }
 
+      case 'copied': {
+        document.getElementById('btn-copy').disabled = false;
+        const n = msg.adrCount;
+        setCopyStatus(`Copied with ${n} ADR${n !== 1 ? 's' : ''} and the ARCH.md constraints. Paste it into your AI assistant.`);
+        break;
+      }
+
+      case 'copyFailed':
+        document.getElementById('btn-copy').disabled = false;
+        setCopyStatus(msg.message, true);
+        break;
+
       case 'error':
-        hideRetrievedAdrs();
         document.getElementById('error-message').textContent = msg.message;
         document.getElementById('btn-check').disabled = false;
         showScreen('screen-error');

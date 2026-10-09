@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-{{nonce}}';">
+  <title>BluePrint: Architecture</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      font-family: var(--vscode-font-family);
+      font-size: var(--vscode-font-size);
+      color: var(--vscode-foreground);
+      background: var(--vscode-editor-background);
+      padding: 20px 24px 60px;
+      margin: 0;
+      line-height: 1.6;
+    }
+
+    .toolbar {
+      position: sticky; top: 0; z-index: 2;
+      display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+      padding: 8px 0 12px; margin-bottom: 8px;
+      background: var(--vscode-editor-background);
+      border-bottom: 1px solid var(--vscode-panel-border, var(--vscode-input-border));
+    }
+    .legend { font-size: 11px; color: var(--vscode-descriptionForeground); margin-right: auto; display: flex; align-items: center; gap: 6px; }
+    .legend .swatch { width: 10px; height: 10px; border-radius: 2px; background: var(--vscode-editorGutter-modifiedBackground, #e6a817); display: inline-block; }
+    button {
+      padding: 4px 12px; border-radius: 3px; font-family: inherit; font-size: 12px; cursor: pointer;
+      border: 1px solid var(--vscode-button-border, var(--vscode-input-border));
+      background: transparent; color: var(--vscode-foreground);
+    }
+    button:hover { background: var(--vscode-list-hoverBackground); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    section { padding: 2px 14px; margin: 0 -14px; border-left: 3px solid transparent; border-radius: 2px; }
+    section.recent {
+      border-left-color: var(--vscode-editorGutter-modifiedBackground, #e6a817);
+      background: rgba(230,168,23,0.05);
+    }
+    .change-note {
+      font-size: 11px; color: var(--vscode-descriptionForeground);
+      margin: -4px 0 8px; display: flex; gap: 6px; align-items: center;
+    }
+    .change-note .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--vscode-editorGutter-modifiedBackground, #e6a817); }
+
+    h1 { font-size: 20px; margin: 10px 0 4px; }
+    h2 { font-size: 15px; margin: 22px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--vscode-panel-border, var(--vscode-input-border)); }
+    h3 { font-size: 13px; }
+    p, li { font-size: 13px; }
+    blockquote { margin: 0 0 8px; padding-left: 10px; border-left: 2px solid var(--vscode-textBlockQuote-border, #888); color: var(--vscode-descriptionForeground); font-size: 12px; }
+    blockquote p { font-size: 12px; margin: 4px 0; }
+    table { border-collapse: collapse; width: 100%; font-size: 12px; margin: 8px 0; }
+    th, td { border: 1px solid var(--vscode-panel-border, var(--vscode-input-border)); padding: 5px 8px; text-align: left; vertical-align: top; }
+    th { background: var(--vscode-sideBar-background, transparent); }
+    code { font-family: var(--vscode-editor-font-family); font-size: 12px; background: var(--vscode-textCodeBlock-background, rgba(127,127,127,0.15)); padding: 1px 4px; border-radius: 3px; }
+    a { color: var(--vscode-textLink-foreground); }
+
+    .empty { text-align: center; padding: 60px 0; color: var(--vscode-descriptionForeground); font-size: 12px; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <span class="legend" id="legend"><span class="swatch"></span><span id="legend-text">Loading…</span></span>
+    <button id="btn-source" title="Open docs/ARCH.md in the editor">Edit source</button>
+    <button id="btn-revert" title="Restore an earlier version of ARCH.md">Revert…</button>
+    <button id="btn-regenerate" title="Re-derive ARCH.md from the codebase (Architect only)">Regenerate from codebase</button>
+  </div>
+
+  <div id="doc"></div>
+  <div id="missing" class="empty hidden">ARCH.md not found. Run <strong>BluePrint: Initialize Project</strong> first.</div>
+
+<script nonce="{{nonce}}">
+  const vscode = acquireVsCodeApi();
+
+  function relativeTime(iso) {
+    const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+    if (s < 60) return 'just now';
+    if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+    if (s < 86400 * 30) return `${Math.floor(s / 86400)} d ago`;
+    return new Date(iso).toLocaleDateString();
+  }
+
+  function render(msg) {
+    const doc = document.getElementById('doc');
+    doc.replaceChildren();
+    document.getElementById('missing').classList.toggle('hidden', !msg.missing);
+    if (msg.missing) { document.getElementById('legend-text').textContent = 'No ARCH.md yet'; return; }
+
+    let highlighted = 0;
+    for (const s of msg.sections) {
+      const el = document.createElement('section');
+      // HTML comes from markdown-it in the extension host with raw HTML disabled (escaped).
+      el.innerHTML = s.html;
+      if (s.highlight) {
+        highlighted++;
+        el.classList.add('recent');
+        const note = document.createElement('div');
+        note.className = 'change-note';
+        const more = s.highlight.changes > 1 ? ` (+${s.highlight.changes - 1} earlier)` : '';
+        note.innerHTML = '<span class="dot"></span>';
+        note.append(`Updated ${relativeTime(s.highlight.timestamp)} · ${s.highlight.reason}${more}`);
+        note.title = new Date(s.highlight.timestamp).toLocaleString();
+        const heading = el.querySelector('h2');
+        if (heading) heading.after(note); else el.prepend(note);
+      }
+      doc.appendChild(el);
+    }
+
+    document.getElementById('legend-text').textContent = highlighted
+      ? `Highlighted: sections changed in the last ${msg.recentLimit} changes`
+      : (msg.historyCount ? 'No sections changed in the recent history' : 'No changes recorded since initialization');
+    const revert = document.getElementById('btn-revert');
+    revert.disabled = !msg.historyCount || msg.isArchitect === false;
+    revert.title = msg.isArchitect === false
+      ? 'Only an Architect can revert ARCH.md (see BluePrint: Configure Roles)'
+      : 'Restore an earlier version of ARCH.md (Architect only)';
+    const regen = document.getElementById('btn-regenerate');
+    regen.disabled = msg.isArchitect === false;
+    regen.title = msg.isArchitect === false
+      ? 'Only an Architect can regenerate ARCH.md (see BluePrint: Configure Roles)'
+      : 'Re-derive ARCH.md from the codebase (Architect only)';
+  }
+
+  document.getElementById('btn-source').addEventListener('click', () => vscode.postMessage({ command: 'openSource' }));
+  document.getElementById('btn-revert').addEventListener('click', () => vscode.postMessage({ command: 'revert' }));
+  document.getElementById('btn-regenerate').addEventListener('click', () => vscode.postMessage({ command: 'regenerate' }));
+
+  // Links in ARCH.md: hand them to VS Code instead of navigating the webview.
+  document.getElementById('doc').addEventListener('click', (e) => {
+    const a = e.target.closest('a[href]');
+    if (!a) return;
+    e.preventDefault();
+    vscode.postMessage({ command: 'openLink', href: a.getAttribute('href') });
+  });
+
+  window.addEventListener('message', ({ data: msg }) => {
+    if (msg.command === 'render') render(msg);
+  });
+
+  vscode.postMessage({ command: 'ready' });
+</script>
+</body>
+</html>

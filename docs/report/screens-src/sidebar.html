@@ -1,0 +1,47 @@
+<!doctype html>
+<!-- Mock-up of BluePrint's sidebar (native VS Code tree views) in the Light Modern theme. -->
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.36/dist/codicon.css">
+<style>
+  body { margin: 0; font: 13px "Segoe UI", sans-serif; color: #3b3b3b; background: #f8f8f8; width: 420px; }
+  .title { height: 35px; display: flex; align-items: center; padding: 0 12px 0 20px; font-size: 11px; letter-spacing: .4px; }
+  .title .actions { margin-left: auto; display: flex; gap: 6px; color: #424242; }
+  .view { border-top: 1px solid #e5e5e5; }
+  .vhead { height: 22px; display: flex; align-items: center; font-size: 11px; font-weight: 700; padding: 0 8px 0 4px; }
+  .vhead .desc { font-weight: 400; color: #717171; margin-left: 6px; text-transform: none; }
+  .vhead .actions { margin-left: auto; display: flex; gap: 7px; font-weight: 400; color: #424242; }
+  .row { height: 22px; display: flex; align-items: center; padding-right: 8px; white-space: nowrap; }
+  .row .codicon { font-size: 16px; margin-right: 6px; }
+  .row .desc { color: #717171; margin-left: 6px; overflow: hidden; text-overflow: ellipsis; }
+  .row.sel { background: #e4e6f1; }
+  .row .inline { margin-left: auto; display: flex; gap: 6px; color: #424242; }
+  .l1 { padding-left: 12px; } .l2 { padding-left: 32px; }
+  .green { color: #388a34; } .amber { color: #bf8803; } .grey { color: #8a8a8a; } .warn { color: #bf8803; }
+</style></head>
+<body><div id="fig">
+  <div class="title">BLUEPRINT<span class="actions"><i class="codicon codicon-ellipsis"></i></span></div>
+  <div class="view">
+    <div class="vhead"><i class="codicon codicon-chevron-down"></i>ARCHITECTURAL DECISIONS<span class="desc">You: Architect</span>
+      <span class="actions"><i class="codicon codicon-add"></i><i class="codicon codicon-search"></i><i class="codicon codicon-filter"></i><i class="codicon codicon-ellipsis"></i></span></div>
+    <div class="row l1"><i class="codicon codicon-chevron-down"></i>Pending approval (1)</div>
+    <div class="row l2 sel"><i class="codicon codicon-clock amber"></i>Extension: Add Notifications component<span class="desc">#0005 · needs your approval</span>
+      <span class="inline"><i class="codicon codicon-check"></i><i class="codicon codicon-close"></i></span></div>
+    <div class="row l1"><i class="codicon codicon-chevron-down"></i>Accepted (3)</div>
+    <div class="row l2"><i class="codicon codicon-check green"></i>Use PostgreSQL as the primary datastore<span class="desc">#0001</span></div>
+    <div class="row l2"><i class="codicon codicon-check green"></i>Authenticate students with university…<span class="desc">#0002</span></div>
+    <div class="row l2"><i class="codicon codicon-check green"></i>Serve the API from Node.js and Express<span class="desc">#0004</span></div>
+    <div class="row l1"><i class="codicon codicon-chevron-down"></i>Superseded (1)</div>
+    <div class="row l2"><i class="codicon codicon-arrow-right grey"></i>Process payments through Stripe<span class="desc">#0003 · replaced by ADR-0006</span></div>
+  </div>
+  <div class="view">
+    <div class="vhead"><i class="codicon codicon-chevron-down"></i>AUDIT TRAIL<span class="actions"><i class="codicon codicon-history"></i></span></div>
+    <div class="row l1"><i class="codicon codicon-pass"></i>Planned component "Frontend" is now implemented<span class="desc">Oct 8</span></div>
+    <div class="row l1"><i class="codicon codicon-clock"></i>ADR-0005 proposed: Extension: Add Notifications…<span class="desc">Oct 8</span></div>
+    <div class="row l1"><i class="codicon codicon-symbol-structure"></i>New component(s) detected: Notifications<span class="desc">Oct 8</span></div>
+    <div class="row l1"><i class="codicon codicon-warning warn"></i>1 violation(s) detected<span class="desc">Oct 8</span></div>
+    <div class="row l1"><i class="codicon codicon-shield"></i>Pre-check: 1 concern<span class="desc">Oct 8</span></div>
+    <div class="row l1"><i class="codicon codicon-edit"></i>ARCH.md updated by ADR-0001<span class="desc">Oct 7</span></div>
+    <div class="row l1"><i class="codicon codicon-organization"></i>Roles updated: 1 Architect, 2 Developers<span class="desc">Oct 7</span></div>
+    <div style="height:8px"></div>
+  </div>
+</div></body></html>

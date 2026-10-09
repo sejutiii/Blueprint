@@ -1,0 +1,42 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="fig.css"></head>
+<body><div id="fig"></div>
+<script type="module">
+import { Diagram } from "./diagram.js";
+const d = new Diagram();
+const W = 275, X = [20, 315, 610, 905];
+
+d.box("audit", { x: 20, y: 74, w: 230, title: "AuditEntry", cls: "ref", html: `<div class="attrs note">see Figure 5.2</div>` });
+d.box("result", { x: 400, y: 66, w: 330, title: "ComplianceResult", attrs: ["violation : boolean", "adrsUsed : ADR id[]"] });
+d.box("diff", { x: 860, y: 20, w: 320, title: "DiffSummary", attrs: [
+  "added / modified / deleted / renamed files : string[]", "newImports : string[]", "newSignatures : string[]",
+  "new / removed dependencies : string[]", "rawDiff : string (excerpt)",
+] });
+
+d.box("viol", { x: X[0], y: 400, w: W, title: "ViolationDetail", attrs: [
+  "constraintId : string", "description : string", "severity : low | medium | high", "affectedCodeLocation : string",
+] });
+d.box("ext", { x: X[1], y: 400, w: W, title: "ExtensionDetail", attrs: [
+  "name : string", "responsibility : string", "technology : string", "rationale : string", "files : string[]",
+] });
+d.box("planned", { x: X[2], y: 400, w: W, title: "PlannedComponent<wbr>Match", attrs: [
+  "component : string", "files : string[]", "rationale : string",
+] });
+d.box("checked", { x: X[3], y: 400, w: W, title: "CheckedFile", attrs: ["file : string", "reason : string"] });
+
+d.box("adr", { x: X[0], y: 690, w: W, title: "ADR", cls: "ref", html: `<div class="attrs note">see Figure 5.2</div>` });
+d.box("component", { x: X[1], y: 690, w: X[2] + W - X[1], title: "ArchComponent", cls: "ref", html: `<div class="attrs note">see Figure 5.2</div>` });
+
+d.edge({ from: ["audit", "right"], to: ["result", "left", 0.5], kind: "assoc", label: "records", fromMult: "*", toMult: "0..1", toMultSide: "above" });
+d.edge({ from: ["result", "right", 0.5], to: ["diff", "left", 0.42], kind: "dep", label: "judged from", labelAt: { x: 795, y: 100 } });
+for (const [id, t] of [["viol", 0], ["ext", 1], ["planned", 2], ["checked", 3]]) {
+  d.edge({ from: ["result", "bottom"], to: [id, "top"], kind: "comp", toMult: "*", fromMult: t === 0 ? "1" : undefined,
+           via: [[null, 300], [X[t] + W / 2, null]] });
+}
+d.edge({ from: ["viol", "bottom"], to: ["adr", "top"], kind: "dep", label: "constraintId refers to" });
+d.edge({ from: ["ext", "bottom"], to: ["component", "top", (X[1] + W / 2 - X[1]) / (X[2] + W - X[1])], kind: "dep", label: "added as (after its ADR)" });
+d.edge({ from: ["planned", "bottom"], to: ["component", "top", (X[2] + W / 2 - X[1]) / (X[2] + W - X[1])], kind: "dep", label: "marks implemented" });
+
+d.render();
+</script>
+</body></html>

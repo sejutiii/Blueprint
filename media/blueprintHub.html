@@ -70,72 +70,153 @@
       display: flex; align-items: center; justify-content: center;
       font-size: 20px; flex-shrink: 0;
     }
-    .icon-violations { background: rgba(244, 67,  54,  0.12); }
-    .icon-extensions { background: rgba(33,  150, 243, 0.12); }
-    .icon-precheck   { background: rgba(76,  175, 80,  0.12); }
+    .icon-review    { background: rgba(244, 67,  54,  0.12); }
+    .icon-precheck  { background: rgba(76,  175, 80,  0.12); }
+    .icon-arch      { background: rgba(33,  150, 243, 0.12); }
+    .icon-decision  { background: rgba(156, 39,  176, 0.12); }
+    .icon-init      { background: rgba(0,   122, 204, 0.12); }
 
     .card-body { flex: 1; min-width: 0; }
     .card-title { font-size: 13px; font-weight: 600; margin-bottom: 3px; }
     .card-desc  { font-size: 11px; color: var(--vscode-descriptionForeground); line-height: 1.5; }
 
     .card-arrow { font-size: 16px; opacity: 0.35; flex-shrink: 0; }
+
+    /* Pending approvals: the one thing on the Hub that may need someone to act */
+    .pending-banner {
+      display: flex; align-items: center; gap: 10px;
+      width: 100%; padding: 10px 14px; margin-bottom: 22px;
+      border-radius: 5px; border: 1px solid rgba(230, 168, 23, 0.45);
+      background: rgba(230, 168, 23, 0.12);
+      font-family: inherit; font-size: 12px; color: var(--vscode-foreground);
+      text-align: left; cursor: pointer;
+    }
+    .pending-banner:hover { border-color: var(--vscode-focusBorder); }
+    .pending-banner .card-arrow { margin-left: auto; }
+
+    .links { margin-top: 22px; display: flex; flex-direction: column; gap: 2px; }
+    .link {
+      display: flex; align-items: center; gap: 10px;
+      padding: 7px 8px; border-radius: 4px; border: none;
+      background: transparent; color: var(--vscode-textLink-foreground);
+      font-family: inherit; font-size: 12px; text-align: left; cursor: pointer;
+    }
+    .link:hover { background: var(--vscode-list-hoverBackground); color: var(--vscode-textLink-activeForeground); }
+    .link-icon { width: 16px; text-align: center; opacity: 0.8; }
+    .link-note { color: var(--vscode-descriptionForeground); font-size: 11px; }
+
+    .hidden { display: none !important; }
   </style>
 </head>
 <body>
 
   <div class="hub-header">
     <div class="hub-title">BluePrint</div>
-    <div class="hub-subtitle">Architecture-aware development assistant</div>
+    <div class="hub-subtitle" id="subtitle">Architecture-aware development assistant</div>
   </div>
 
-  <div class="git-reminder">
-    <span class="git-reminder-label">Before you run</span>
-    Modified files are picked up automatically. <strong>New files</strong> must be staged
-    first — run <code>git add &lt;file&gt;</code> before checking.
-    Always run checks <strong>before</strong> <code>git commit</code>.
+  <!-- Shown until the extension reports that the project is initialized -->
+  <div id="view-uninitialized" class="hidden">
+    <div class="section-label">Get started</div>
+    <button class="action-card" data-command="init" title="Set up BluePrint for this project: LLM provider, team roles and ARCH.md">
+      <div class="card-icon icon-init">◇</div>
+      <div class="card-body">
+        <div class="card-title">Initialize BluePrint</div>
+        <div class="card-desc">BluePrint isn't set up in this project yet. Choose an LLM provider, set up roles and generate ARCH.md for this codebase.</div>
+      </div>
+      <span class="card-arrow">›</span>
+    </button>
   </div>
 
-  <div class="section-label">What would you like to do?</div>
+  <div id="view-initialized" class="hidden">
+    <button class="pending-banner hidden" id="pending" data-command="openApprovals">
+      <span>⧗</span>
+      <span id="pending-text"></span>
+      <span class="card-arrow">›</span>
+    </button>
 
-  <button class="action-card" id="btn-violations" title="Check whether your code changes break existing architecture constraints or ADRs">
-    <div class="card-icon icon-violations">⚠</div>
-    <div class="card-body">
-      <div class="card-title">Check for Violations</div>
-      <div class="card-desc">Detect code changes that break your architecture constraints or recorded decisions.</div>
+    <div class="git-reminder">
+      <span class="git-reminder-label">Before you run</span>
+      Reviews look at everything not yet committed: changed, new, deleted and renamed files
+      (files ignored by <code>.gitignore</code> are skipped).
+      Run checks <strong>before</strong> <code>git commit</code>.
     </div>
-    <span class="card-arrow">›</span>
-  </button>
 
-  <button class="action-card" id="btn-extensions" title="Detect new structural components introduced by your changes that are not yet in ARCH.md">
-    <div class="card-icon icon-extensions">◈</div>
-    <div class="card-body">
-      <div class="card-title">Check for Extensions</div>
-      <div class="card-desc">Detect new structural components in your changes that are not yet documented in your architecture.</div>
-    </div>
-    <span class="card-arrow">›</span>
-  </button>
+    <div class="section-label">What would you like to do?</div>
 
-  <button class="action-card" id="btn-precheck" title="Check your AI coding prompt against architecture constraints before writing any code">
-    <div class="card-icon icon-precheck">◎</div>
-    <div class="card-body">
-      <div class="card-title">Pre-Check Prompt</div>
-      <div class="card-desc">Check your AI coding prompt against architecture constraints before writing any code.</div>
+    <button class="action-card" data-command="openReview" title="Check your uncommitted changes against ARCH.md and your decisions">
+      <div class="card-icon icon-review">⚑</div>
+      <div class="card-body">
+        <div class="card-title">Review my changes</div>
+        <div class="card-desc">Find changes that break your constraints or decisions, and new components not yet in ARCH.md.</div>
+      </div>
+      <span class="card-arrow">›</span>
+    </button>
+
+    <button class="action-card" data-command="openPreCheck" title="Check your AI coding prompt against architecture constraints before writing any code">
+      <div class="card-icon icon-precheck">◎</div>
+      <div class="card-body">
+        <div class="card-title">Pre-check a prompt</div>
+        <div class="card-desc">Check an AI coding prompt against your architecture before any code is written.</div>
+      </div>
+      <span class="card-arrow">›</span>
+    </button>
+
+    <button class="action-card" data-command="viewArch" title="Open the rendered ARCH.md with recent changes highlighted">
+      <div class="card-icon icon-arch">▤</div>
+      <div class="card-body">
+        <div class="card-title">View architecture</div>
+        <div class="card-desc">Read ARCH.md with recent changes highlighted; edit, revert or regenerate it.</div>
+      </div>
+      <span class="card-arrow">›</span>
+    </button>
+
+    <button class="action-card" data-command="openAddDecision" title="Record a decision, a new constraint, or a changed requirement as an ADR">
+      <div class="card-icon icon-decision">✚</div>
+      <div class="card-body">
+        <div class="card-title">Add a decision</div>
+        <div class="card-desc">Describe a decision or a changed requirement in your own words. BluePrint drafts the ADR and updates ARCH.md.</div>
+      </div>
+      <span class="card-arrow">›</span>
+    </button>
+
+    <div class="links">
+      <button class="link" data-command="viewAuditTrail"><span class="link-icon">↻</span>Audit trail <span class="link-note">— every review, decision and ARCH.md change</span></button>
+      <button class="link" data-command="configureRoles"><span class="link-icon">⚇</span>Team &amp; roles <span class="link-note" id="role-note"></span></button>
+      <button class="link" data-command="changeProvider"><span class="link-icon">⚿</span>Change LLM provider / API key</button>
     </div>
-    <span class="card-arrow">›</span>
-  </button>
+  </div>
 
 <script nonce="{{nonce}}">
   const vscode = acquireVsCodeApi();
 
-  document.getElementById('btn-violations').addEventListener('click', () => {
-    vscode.postMessage({ command: 'openViolations' });
+  window.addEventListener('message', ({ data: msg }) => {
+    if (msg.command !== 'state') return;
+    document.getElementById('view-initialized').classList.toggle('hidden', !msg.initialized);
+    document.getElementById('view-uninitialized').classList.toggle('hidden', msg.initialized);
+
+    const role = msg.role === 'developer' ? 'Developer' : 'Architect';
+    document.getElementById('subtitle').textContent = msg.identity
+      ? `${msg.identity} · ${role}`
+      : 'Architecture-aware development assistant';
+    document.getElementById('role-note').textContent = msg.rolesConfigured
+      ? `— you are ${role === 'Architect' ? 'an Architect' : 'a Developer'}`
+      : '— not set up: everyone is an Architect';
+
+    const pending = msg.pending || 0;
+    document.getElementById('pending').classList.toggle('hidden', !pending);
+    const decisions = `${pending} decision${pending === 1 ? '' : 's'}`;
+    document.getElementById('pending-text').textContent = msg.role === 'developer'
+      ? `${decisions} waiting for an Architect's approval`
+      : `${decisions} need${pending === 1 ? 's' : ''} your approval`;
   });
-  document.getElementById('btn-extensions').addEventListener('click', () => {
-    vscode.postMessage({ command: 'openExtensions' });
+
+  document.body.addEventListener('click', (e) => {
+    const target = e.target.closest('[data-command]');
+    if (target) vscode.postMessage({ command: target.dataset.command });
   });
-  document.getElementById('btn-precheck').addEventListener('click', () => {
-    vscode.postMessage({ command: 'openPreCheck' });
-  });
+
+  vscode.postMessage({ command: 'ready' });
 </script>
 </body>
 </html>

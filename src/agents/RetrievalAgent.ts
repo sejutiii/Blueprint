@@ -12,6 +12,28 @@ const STOPWORDS = new Set([
 // Weight given to semantic (embedding) similarity vs. lexical (TF-IDF) similarity
 // when both are available. Equal-weighted blend: neither signal dominates.
 const SEMANTIC_WEIGHT = 0.5;
+const COMPONENT_BOOST = 0.15;
+
+// Minimum score for an ADR to be presented as "relevant". Calibrated on 6 sample prompts with
+// all-MiniLM-L6-v2 (q8): clearly related prompt/ADR pairs blended to >= 0.14, unrelated ones
+// stayed <= ~0.08. Lexical-only scoring (model unavailable) gets its own bar.
+export const RELEVANCE_THRESHOLD = { blended: 0.10, lexical: 0.08 } as const;
+
+// How many accepted ADRs go to the model as context: the `blueprint.retrieval.topK` setting.
+export const DEFAULT_TOP_K = 5;
+export const MAX_TOP_K = 20;
+
+/** The top-K setting as a whole number in 1–MAX_TOP_K; a hand-edited value that isn't a number gets the default. */
+export function clampTopK(raw: unknown): number {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) { return DEFAULT_TOP_K; }
+  return Math.min(MAX_TOP_K, Math.max(1, Math.round(raw)));
+}
+
+export interface ScoredAdr {
+  adr: ADR;
+  score: number;
+  relevant: boolean;
+}
 
 export class RetrievalAgent {
   constructor(private readonly embeddings: EmbeddingService = new EmbeddingService()) {}
@@ -29,13 +51,35 @@ export class RetrievalAgent {
     query: string,
     adrs: ADR[],
     blueprint: ArchBlueprint | null,
-    topK = 5,
+    topK = DEFAULT_TOP_K,
     adrStore?: AdrStore | null
   ): Promise<ADR[]> {
-    if (adrs.length <= topK) { return adrs; }
-    if (!query.trim())       { return adrs.slice(0, topK); }
+    // Only binding decisions count as context — pending, rejected and retired ADRs must not
+    // be used to judge new code.
+    const accepted = adrs.filter((a) => a.status === "accepted");
+    if (accepted.length <= topK) { return accepted; } // nothing to rank (T26)
+    if (!query.trim())           { return accepted.slice(0, topK); }
 
-    const adrTexts = adrs.map(RetrievalAgent.adrToText);
+    const { results } = await this.retrieveScored(query, accepted, blueprint, topK, adrStore);
+    return results.map((r) => r.adr);
+  }
+
+  /**
+   * Like `retrieve`, but always scores (no short-circuit for small ADR sets) and returns each
+   * ADR's score plus whether it clears the relevance threshold — used where the developer is
+   * shown "relevant ADRs", so barely-related ones aren't presented as relevant.
+   */
+  async retrieveScored(
+    query: string,
+    adrs: ADR[],
+    blueprint: ArchBlueprint | null,
+    topK = DEFAULT_TOP_K,
+    adrStore?: AdrStore | null
+  ): Promise<{ results: ScoredAdr[]; semantic: boolean }> {
+    const accepted = adrs.filter((a) => a.status === "accepted");
+    if (!accepted.length || !query.trim()) { return { results: [], semantic: false }; }
+
+    const adrTexts = accepted.map(RetrievalAgent.adrToText);
     const corpus   = [...adrTexts, query];
     const vocab    = RetrievalAgent.buildVocabulary(corpus);
     const idf      = RetrievalAgent.computeIdf(corpus, vocab);
@@ -45,12 +89,13 @@ export class RetrievalAgent {
     const componentNames = (blueprint?.components ?? [])
       .map((c) => c.name.toLowerCase());
 
-    const queryLower = query.toLowerCase();
+    const queryLower     = query.toLowerCase();
     const queryEmbedding = await this.embeddings.embed(query);
+    let semantic = false;
 
     const scored: { adr: ADR; score: number }[] = [];
-    for (let i = 0; i < adrs.length; i++) {
-      const adr = adrs[i];
+    for (let i = 0; i < accepted.length; i++) {
+      const adr    = accepted[i];
       const adrVec = RetrievalAgent.tfidf(adrTexts[i], vocab, idf);
       let score    = RetrievalAgent.cosine(queryVec, adrVec);
 
@@ -59,6 +104,7 @@ export class RetrievalAgent {
         if (adrEmbedding && adrEmbedding.length === queryEmbedding.length) {
           const semanticScore = RetrievalAgent.cosineArrays(queryEmbedding, adrEmbedding);
           score = (1 - SEMANTIC_WEIGHT) * score + SEMANTIC_WEIGHT * semanticScore;
+          semantic = true;
         }
       }
 
@@ -66,21 +112,25 @@ export class RetrievalAgent {
       // Boost when both the ADR and the query mention the same component
       for (const name of componentNames) {
         if (name.length >= 3 && adrLower.includes(name) && queryLower.includes(name)) {
-          score += 0.15;
+          score += COMPONENT_BOOST;
         }
       }
 
       scored.push({ adr, score });
     }
 
-    return scored
-      .sort((a, b) => b.score - a.score)
-      .slice(0, topK)
-      .map((s) => s.adr);
+    const threshold = semantic ? RELEVANCE_THRESHOLD.blended : RELEVANCE_THRESHOLD.lexical;
+    return {
+      semantic,
+      results: scored
+        .sort((a, b) => b.score - a.score)
+        .slice(0, topK)
+        .map((s) => ({ ...s, relevant: s.score >= threshold })),
+    };
   }
 
   /** Returns the ADR's cached embedding, generating and persisting one if missing/stale. */
-  private async ensureEmbedding(
+  async ensureEmbedding(
     adr: ADR,
     text: string,
     adrStore?: AdrStore | null
@@ -100,16 +150,17 @@ export class RetrievalAgent {
   /** Build a plain-text query string from a DiffSummary. */
   static queryFromDiff(diff: DiffSummary): string {
     return [
-      ...diff.newFiles,
+      ...diff.changedFiles,
       ...diff.newSignatures,
       ...diff.newImports,
       ...diff.newDependencies,
+      ...diff.removedDependencies,
     ].join(" ");
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
 
-  private static adrToText(adr: ADR): string {
+  static adrToText(adr: ADR): string {
     return `${adr.title} ${adr.context} ${adr.decision} ${adr.consequences ?? ""}`;
   }
 

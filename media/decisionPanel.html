@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-{{nonce}}';">
+  <title>BluePrint: Add Decision</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--vscode-font-family);
+      font-size: var(--vscode-font-size);
+      color: var(--vscode-foreground);
+      background: var(--vscode-editor-background);
+      padding: 32px 24px 60px;
+      max-width: 620px;
+    }
+    h2 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+    .subtitle { color: var(--vscode-descriptionForeground); font-size: 12px; margin-bottom: 18px; line-height: 1.6; }
+
+    .field { margin-bottom: 14px; }
+    label { display: block; font-size: 12px; font-weight: 500; margin-bottom: 5px; }
+    input[type="text"], textarea, select {
+      width: 100%;
+      background: var(--vscode-input-background); color: var(--vscode-input-foreground);
+      border: 1px solid var(--vscode-input-border); border-radius: 3px;
+      padding: 7px 10px; font-family: inherit; font-size: 13px; outline: none;
+    }
+    input:focus, textarea:focus, select:focus { border-color: var(--vscode-focusBorder); }
+    textarea { resize: vertical; min-height: 64px; line-height: 1.5; }
+    #description { min-height: 120px; }
+
+    .actions { display: flex; align-items: center; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+    .actions .spacer { flex: 1; }
+    button {
+      padding: 7px 18px; border: none; border-radius: 3px; cursor: pointer;
+      font-family: inherit; font-size: 13px;
+      background: var(--vscode-button-background); color: var(--vscode-button-foreground);
+    }
+    button:hover { background: var(--vscode-button-hoverBackground); }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
+    button.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
+    a { color: var(--vscode-textLink-foreground); text-decoration: none; cursor: pointer; }
+    a:hover { text-decoration: underline; }
+    .hint { font-size: 11px; color: var(--vscode-descriptionForeground); line-height: 1.5; }
+
+    .banner {
+      font-size: 12px; line-height: 1.6; padding: 8px 12px; margin-bottom: 14px; border-radius: 4px;
+      background: var(--vscode-editorInfo-background, rgba(0, 122, 204, 0.1));
+      border: 1px solid var(--vscode-editorInfo-border, rgba(0, 122, 204, 0.4));
+    }
+    .banner.warning {
+      background: var(--vscode-inputValidation-warningBackground, rgba(230, 168, 23, 0.12));
+      border-color: var(--vscode-inputValidation-warningBorder, rgba(230, 168, 23, 0.6));
+    }
+    .replaces-box {
+      border: 1px solid var(--vscode-panel-border, var(--vscode-input-border));
+      border-radius: 4px; padding: 12px; margin: 4px 0 14px;
+    }
+    .replaces-reason { margin-top: 8px; }
+    .replaces-detail { margin-top: 6px; white-space: pre-wrap; }
+
+    .inline-error {
+      font-size: 12px; color: var(--vscode-errorForeground);
+      background: var(--vscode-inputValidation-errorBackground);
+      border: 1px solid var(--vscode-inputValidation-errorBorder);
+      border-radius: 3px; padding: 8px 10px; margin-top: 14px; white-space: pre-wrap; word-break: break-word;
+    }
+
+    .spinner-wrap { text-align: center; padding: 44px 0; }
+    .spinner {
+      width: 32px; height: 32px; margin: 0 auto 18px;
+      border: 3px solid var(--vscode-input-border); border-top-color: var(--vscode-button-background);
+      border-radius: 50%; animation: spin 0.75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner-wrap p { color: var(--vscode-descriptionForeground); font-size: 12px; }
+
+    .done-wrap { text-align: center; padding: 28px 0; }
+    .done-icon {
+      width: 44px; height: 44px; border-radius: 50%; margin: 0 auto 16px;
+      display: flex; align-items: center; justify-content: center; font-size: 20px; color: white;
+      background: var(--vscode-testing-iconPassed, #4caf50);
+    }
+    .done-icon.pending { background: var(--vscode-editorWarning-foreground, #e6a817); }
+    .done-wrap p { font-size: 12px; color: var(--vscode-descriptionForeground); line-height: 1.6; margin-bottom: 18px; }
+    .done-wrap .actions { justify-content: center; }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <!-- Describe -->
+  <div id="screen-describe">
+    <h2>Add a Decision</h2>
+    <p class="subtitle">
+      Describe a decision, a new constraint, or a requirement that changed, in your own words.
+      BluePrint drafts an ADR you can edit before saving, and checks whether it replaces an existing decision.
+    </p>
+    <div class="field">
+      <textarea id="description" placeholder="e.g. &quot;We're moving file uploads from local disk to Amazon S3, because the app will run on several servers.&quot;"></textarea>
+    </div>
+    <div class="actions">
+      <button id="btn-draft">Draft ADR</button>
+      <span class="hint">Ctrl+Enter</span>
+      <span class="spacer"></span>
+      <a id="link-guided">Answer the guided questions instead →</a>
+    </div>
+    <div id="describe-error" class="inline-error hidden"></div>
+  </div>
+
+  <!-- Drafting -->
+  <div id="screen-drafting" class="hidden">
+    <div class="spinner-wrap">
+      <div class="spinner"></div>
+      <p>Drafting the ADR and checking existing decisions…</p>
+    </div>
+  </div>
+
+  <!-- Review the draft -->
+  <div id="screen-draft" class="hidden">
+    <h2>Review the draft</h2>
+    <p class="subtitle">Edit anything before saving. The title becomes the constraint line in ARCH.md.</p>
+
+    <div id="tentative-banner" class="banner warning hidden">
+      This reads as tentative. ADRs work best for firm decisions, because reviews treat them as rules.
+      Make the wording definite, or go back and describe it once it's decided.
+    </div>
+
+    <div class="field"><label for="d-title">Title</label><input type="text" id="d-title" /></div>
+    <div class="field"><label for="d-context">Context</label><textarea id="d-context"></textarea></div>
+    <div class="field"><label for="d-decision">Decision</label><textarea id="d-decision"></textarea></div>
+    <div class="field"><label for="d-consequences">Consequences</label><textarea id="d-consequences"></textarea></div>
+
+    <div class="field">
+      <label for="replaces">Replaces an existing decision?</label>
+      <div class="replaces-box">
+        <select id="replaces"></select>
+        <p class="hint replaces-reason hidden" id="replaces-reason"></p>
+        <p class="hint replaces-detail hidden" id="replaces-detail"></p>
+      </div>
+    </div>
+
+    <div class="banner" id="role-note"></div>
+
+    <div class="actions">
+      <button class="secondary" id="btn-back">← Edit description</button>
+      <span class="spacer"></span>
+      <button id="btn-save">Save ADR</button>
+    </div>
+    <div id="draft-error" class="inline-error hidden"></div>
+  </div>
+
+  <!-- Saved -->
+  <div id="screen-saved" class="hidden">
+    <div class="done-wrap">
+      <div class="done-icon" id="saved-icon">✓</div>
+      <h2 id="saved-title"></h2>
+      <p id="saved-text"></p>
+      <div class="actions">
+        <button class="secondary" id="btn-open-adr">Open ADR</button>
+        <button id="btn-another">Add another decision</button>
+      </div>
+    </div>
+  </div>
+
+<script nonce="{{nonce}}">
+  const vscode = acquireVsCodeApi();
+  const $ = (id) => document.getElementById(id);
+  const screens = ['screen-describe', 'screen-drafting', 'screen-draft', 'screen-saved'];
+  function showScreen(id) { screens.forEach(s => $(s).classList.toggle('hidden', s !== id)); }
+
+  function setError(id, message) {
+    $(id).textContent = message || '';
+    $(id).classList.toggle('hidden', !message);
+  }
+
+  let roles = null;
+  let candidates = [];
+  let suggested = null;      // { id, reason } from the model
+  let savedAdrId = null;
+
+  function renderRoleNote() {
+    const note = $('role-note');
+    const replacing = $('replaces').value;
+    const developer = roles && roles.role === 'developer';
+    note.textContent = developer
+      ? `You are a Developer, so this decision will wait for an Architect's approval. ARCH.md changes${replacing ? ', and the old decision is retired,' : ''} only once it is approved.`
+      : `As an Architect, saving accepts this decision and updates ARCH.md straight away${replacing ? `, replacing ADR-${replacing}'s constraint` : ''}.`;
+  }
+
+  function renderReplaces() {
+    const select = $('replaces');
+    select.replaceChildren();
+    const none = document.createElement('option');
+    none.value = '';
+    none.textContent = 'No — this is a new decision';
+    select.append(none);
+    for (const c of candidates) {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = `ADR-${c.id}: ${c.title}${suggested && suggested.id === c.id ? '  (suggested)' : ''}`;
+      select.append(opt);
+    }
+    select.value = suggested ? suggested.id : '';
+    select.disabled = !candidates.length;
+    updateReplacesDetail();
+  }
+
+  function updateReplacesDetail() {
+    const id = $('replaces').value;
+    const reason = $('replaces-reason');
+    const detail = $('replaces-detail');
+    if (suggested && id === suggested.id && suggested.reason) {
+      reason.textContent = `Why: ${suggested.reason}`;
+      reason.classList.remove('hidden');
+    } else {
+      reason.classList.add('hidden');
+    }
+    const chosen = candidates.find(c => c.id === id);
+    if (chosen) {
+      detail.textContent = `Its decision: ${chosen.decision}\nOn saving, it is marked superseded and its constraint in ARCH.md is replaced by this one.`;
+      detail.classList.remove('hidden');
+    } else {
+      detail.textContent = candidates.length ? '' : 'There are no accepted decisions to replace yet.';
+      detail.classList.toggle('hidden', !!candidates.length);
+    }
+    renderRoleNote();
+  }
+
+  $('replaces').addEventListener('change', updateReplacesDetail);
+
+  function requestDraft() {
+    const description = $('description').value.trim();
+    setError('describe-error', '');
+    if (!description) { $('description').focus(); return; }
+    showScreen('screen-drafting');
+    vscode.postMessage({ command: 'draft', description });
+  }
+  $('btn-draft').addEventListener('click', requestDraft);
+  $('description').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { requestDraft(); }
+  });
+  $('link-guided').addEventListener('click', () => vscode.postMessage({ command: 'guided' }));
+
+  $('btn-back').addEventListener('click', () => { setError('draft-error', ''); showScreen('screen-describe'); $('description').focus(); });
+
+  $('btn-save').addEventListener('click', () => {
+    const draft = {
+      title:        $('d-title').value.trim(),
+      context:      $('d-context').value.trim(),
+      decision:     $('d-decision').value.trim(),
+      consequences: $('d-consequences').value.trim(),
+    };
+    if (!draft.title || !draft.decision) {
+      setError('draft-error', 'An ADR needs at least a title and a decision.');
+      $(draft.title ? 'd-decision' : 'd-title').focus();
+      return;
+    }
+    setError('draft-error', '');
+    $('btn-save').disabled = true;
+    $('btn-save').textContent = 'Saving…';
+    vscode.postMessage({ command: 'save', draft, supersedes: $('replaces').value || null });
+  });
+
+  $('btn-another').addEventListener('click', () => {
+    $('description').value = '';
+    showScreen('screen-describe');
+    $('description').focus();
+  });
+  $('btn-open-adr').addEventListener('click', () => { if (savedAdrId) vscode.postMessage({ command: 'openAdr', id: savedAdrId }); });
+
+  window.addEventListener('message', ({ data: msg }) => {
+    switch (msg.command) {
+      case 'init':
+        roles = msg.roles || null;
+        if (msg.description) { $('description').value = msg.description; }
+        break;
+
+      case 'draft': {
+        const r = msg.result;
+        $('d-title').value        = r.draft.title || '';
+        $('d-context').value      = r.draft.context || '';
+        $('d-decision').value     = r.draft.decision || '';
+        $('d-consequences').value = r.draft.consequences || '';
+        $('tentative-banner').classList.toggle('hidden', !r.tentative);
+        candidates = msg.candidates || [];
+        suggested  = r.supersedes ? { id: r.supersedes, reason: r.supersedesReason || '' } : null;
+        renderReplaces();
+        $('btn-save').disabled = false;
+        $('btn-save').textContent = 'Save ADR';
+        showScreen('screen-draft');
+        $('d-title').focus();
+        break;
+      }
+
+      case 'saved': {
+        savedAdrId = msg.adrId;
+        $('saved-icon').classList.toggle('pending', !!msg.pending);
+        $('saved-icon').textContent = msg.pending ? '⧗' : '✓';
+        $('saved-title').textContent = msg.pending ? `ADR-${msg.adrId} proposed` : `ADR-${msg.adrId} saved`;
+        $('saved-text').textContent = msg.message;
+        showScreen('screen-saved');
+        break;
+      }
+
+      case 'error':
+        if (msg.stage === 'save') {
+          $('btn-save').disabled = false;
+          $('btn-save').textContent = 'Save ADR';
+          setError('draft-error', msg.message);
+        } else {
+          showScreen('screen-describe');
+          setError('describe-error', msg.message);
+        }
+        break;
+    }
+  });
+
+  vscode.postMessage({ command: 'ready' });
+</script>
+</body>
+</html>

@@ -4,11 +4,35 @@
   "description": "Architecture-aware AI-assisted development with persistent architectural knowledge",
   "version": "0.1.0",
   "publisher": "blueprint-dev",
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#1b4f8f",
+    "theme": "dark"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sejutiii/Blueprint.git"
+  },
+  "bugs": {
+    "url": "https://github.com/sejutiii/Blueprint/issues"
+  },
+  "homepage": "https://github.com/sejutiii/Blueprint#readme",
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
+    "AI",
+    "Linters",
     "Other"
+  ],
+  "keywords": [
+    "architecture",
+    "adr",
+    "architecture decision records",
+    "ai",
+    "llm",
+    "code review",
+    "compliance"
   ],
   "activationEvents": [
     "onStartupFinished"
@@ -50,6 +74,65 @@
         "command": "blueprint.viewAuditTrail",
         "title": "BluePrint: View Decision Audit Trail",
         "icon": "$(history)"
+      },
+      {
+        "command": "blueprint.approveAdr",
+        "title": "BluePrint: Approve Pending Decision",
+        "icon": "$(check)"
+      },
+      {
+        "command": "blueprint.rejectAdr",
+        "title": "BluePrint: Reject Pending Decision",
+        "icon": "$(close)"
+      },
+      {
+        "command": "blueprint.searchAdrs",
+        "title": "BluePrint: Search ADRs",
+        "icon": "$(search)"
+      },
+      {
+        "command": "blueprint.filterAdrs",
+        "title": "BluePrint: Filter ADR Browser",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "blueprint.clearAdrFilter",
+        "title": "BluePrint: Clear ADR Filter",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "blueprint.showLastReview",
+        "title": "BluePrint: Show Last Compliance Review"
+      },
+      {
+        "command": "blueprint.changeProvider",
+        "title": "BluePrint: Change LLM Provider / API Key",
+        "icon": "$(key)"
+      },
+      {
+        "command": "blueprint.configureRoles",
+        "title": "BluePrint: Configure Team & Roles",
+        "icon": "$(organization)"
+      },
+      {
+        "command": "blueprint.revertArch",
+        "title": "BluePrint: Revert ARCH.md to Earlier Version",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "blueprint.regenerateArch",
+        "title": "BluePrint: Regenerate ARCH.md from Codebase",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "blueprint.addDecision",
+        "title": "BluePrint: Add Decision (ADR)",
+        "icon": "$(add)"
+      },
+      {
+        "command": "blueprint.guidedQuestions",
+        "title": "BluePrint: Answer Constraint Questions",
+        "icon": "$(question)"
       }
     ],
     "viewsContainers": {
@@ -79,6 +162,7 @@
       "editor/title": [
         {
           "command": "blueprint.openHub",
+          "when": "blueprint.initialized",
           "group": "navigation"
         }
       ],
@@ -105,26 +189,186 @@
         {
           "command": "blueprint.viewAuditTrail",
           "when": "blueprint.initialized"
+        },
+        {
+          "command": "blueprint.approveAdr",
+          "when": "blueprint.initialized && blueprint.isArchitect"
+        },
+        {
+          "command": "blueprint.rejectAdr",
+          "when": "blueprint.initialized && blueprint.isArchitect"
+        },
+        {
+          "command": "blueprint.searchAdrs",
+          "when": "blueprint.initialized"
+        },
+        {
+          "command": "blueprint.filterAdrs",
+          "when": "blueprint.initialized"
+        },
+        {
+          "command": "blueprint.clearAdrFilter",
+          "when": "blueprint.adrFilterActive"
+        },
+        {
+          "command": "blueprint.showLastReview",
+          "when": "false"
+        },
+        {
+          "command": "blueprint.revertArch",
+          "when": "blueprint.initialized && blueprint.isArchitect"
+        },
+        {
+          "command": "blueprint.configureRoles"
+        },
+        {
+          "command": "blueprint.regenerateArch",
+          "when": "blueprint.initialized && blueprint.isArchitect"
+        },
+        {
+          "command": "blueprint.addDecision",
+          "when": "blueprint.initialized"
+        },
+        {
+          "command": "blueprint.guidedQuestions",
+          "when": "blueprint.initialized"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "blueprint.addDecision",
+          "when": "view == blueprint.adrBrowser",
+          "group": "navigation@0"
+        },
+        {
+          "command": "blueprint.searchAdrs",
+          "when": "view == blueprint.adrBrowser",
+          "group": "navigation@1"
+        },
+        {
+          "command": "blueprint.filterAdrs",
+          "when": "view == blueprint.adrBrowser",
+          "group": "navigation@2"
+        },
+        {
+          "command": "blueprint.clearAdrFilter",
+          "when": "view == blueprint.adrBrowser && blueprint.adrFilterActive",
+          "group": "navigation@3"
+        },
+        {
+          "command": "blueprint.configureRoles",
+          "when": "view == blueprint.adrBrowser",
+          "group": "overflow"
+        },
+        {
+          "command": "blueprint.viewAuditTrail",
+          "when": "view == blueprint.auditTrail",
+          "group": "navigation"
+        },
+        {
+          "command": "blueprint.guidedQuestions",
+          "when": "view == blueprint.adrBrowser",
+          "group": "overflow"
+        },
+        {
+          "command": "blueprint.changeProvider",
+          "when": "view == blueprint.adrBrowser",
+          "group": "overflow"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "blueprint.approveAdr",
+          "when": "view == blueprint.adrBrowser && viewItem == adr-pending && blueprint.isArchitect",
+          "group": "inline@1"
+        },
+        {
+          "command": "blueprint.rejectAdr",
+          "when": "view == blueprint.adrBrowser && viewItem == adr-pending && blueprint.isArchitect",
+          "group": "inline@2"
+        },
+        {
+          "command": "blueprint.approveAdr",
+          "when": "view == blueprint.adrBrowser && viewItem == adr-pending && blueprint.isArchitect",
+          "group": "review@1"
+        },
+        {
+          "command": "blueprint.rejectAdr",
+          "when": "view == blueprint.adrBrowser && viewItem == adr-pending && blueprint.isArchitect",
+          "group": "review@2"
         }
       ]
+    },
+    "configuration": {
+      "title": "BluePrint",
+      "properties": {
+        "blueprint.autoReviewOnNewFile": {
+          "type": "boolean",
+          "default": true,
+          "description": "Offer an architectural review when new files are created in the workspace."
+        },
+        "blueprint.retrieval.topK": {
+          "type": "integer",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 20,
+          "markdownDescription": "How many past decisions (accepted ADRs) are sent to the model as context in compliance reviews, prompt pre-checks and Add Decision, most relevant first. A higher number catches more conflicts but makes each request longer, slower and costlier. A project with this many accepted ADRs or fewer always sends all of them."
+        },
+        "blueprint.model.gemini": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Model to use with Google Gemini. Leave empty for the built-in default (`gemini-flash-latest`). Set this if the default is retired or you want a different model."
+        },
+        "blueprint.model.groq": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Model to use with Groq. Leave empty for the built-in default (`openai/gpt-oss-120b`). Set this if the default is retired or you want a different model."
+        },
+        "blueprint.model.openrouter": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Model to use with OpenRouter. Leave empty for the built-in default (`openrouter/free`). Set this if the default is retired or you want a different model."
+        },
+        "blueprint.model.anthropic": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Model to use with Anthropic. Leave empty for the built-in default (`claude-sonnet-4-6`). Set this if the default is retired or you want a different model."
+        },
+        "blueprint.model.openai": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Model to use with OpenAI. Leave empty for the built-in default (`gpt-4o-mini`). Set this if the default is retired or you want a different model."
+        }
+      }
     }
   },
   "scripts": {
     "vscode:prepublish": "node esbuild.js --production",
     "build": "node esbuild.js",
     "watch": "node esbuild.js --watch",
-    "lint": "eslint src --ext ts"
+    "lint": "eslint src --ext ts",
+    "package": "node scripts/package.js",
+    "package:all": "node scripts/package.js --all",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p . && tsc -p tests"
   },
   "devDependencies": {
+    "@types/markdown-it": "^14.2.0",
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.85.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
+    "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.20.0",
     "eslint": "^8.0.0",
-    "typescript": "^5.3.0"
+    "typescript": "^5.3.0",
+    "vitest": "^2.1.9"
   },
   "dependencies": {
-    "@huggingface/transformers": "^4.2.0"
+    "@huggingface/transformers": "^4.2.0",
+    "markdown-it": "^14.3.2",
+    "tree-sitter-wasms": "^0.1.13",
+    "web-tree-sitter": "^0.22.6"
   }
 }

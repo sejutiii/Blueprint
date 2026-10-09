@@ -11,9 +11,22 @@ export interface ConstraintDraft {
   consequences: string;
 }
 
+export interface FollowUpQuestion {
+  question: string;
+  placeholder: string;
+}
+
 export interface ConstraintAnalysisResult {
   hasConstraint: boolean;
   draft?: ConstraintDraft;
+  /** Optional, answer-specific question that sharpens this topic (branching dialogue, SRS 3.1). */
+  followUp?: FollowUpQuestion;
+}
+
+/** The question/answer a follow-up was generated from, so its answer is analyzed in context. */
+export interface ParentExchange {
+  question: string;
+  answer: string;
 }
 
 export const CONSTRAINT_QUESTIONS: QuestionStep[] = [
@@ -51,11 +64,11 @@ export const CONSTRAINT_QUESTIONS: QuestionStep[] = [
 
 export const CONSTRAINT_ANALYSIS_SYSTEM_PROMPT = `You are an architectural decision analyst. A developer answered a question about their project's constraints.
 
-Analyze the answer. If it reveals a concrete architectural constraint or decision, draft an ADR for it.
+Analyze the answer. If it reveals a concrete architectural constraint or decision, draft an ADR for it. Then decide whether ONE follow-up question would turn what they said into a sharper, more enforceable constraint.
 
 Respond with ONLY valid JSON. No markdown, no code fences.
 
-If the answer contains a concrete constraint:
+Schema (omit "draft" when hasConstraint is false; omit "followUp" when no follow-up is needed):
 {
   "hasConstraint": true,
   "draft": {
@@ -63,19 +76,39 @@ If the answer contains a concrete constraint:
     "context": "Why this decision matters and what problem it solves (2-3 sentences)",
     "decision": "The specific decision stated clearly (1-2 sentences)",
     "consequences": "What this decision implies for the rest of the project (2-3 sentences)"
+  },
+  "followUp": {
+    "question": "One short question about a boundary the answer left open",
+    "placeholder": "A short example answer"
   }
 }
 
-If the answer is vague, empty, or contains no concrete constraint:
-{
-  "hasConstraint": false
-}
-
-Rules:
+Rules for the draft:
 - Only record decisions that are concrete: "We are using React" yes. "We might use React" no.
-- One ADR per response — pick the most significant constraint if multiple are mentioned
-- Keep each field to 2-3 sentences maximum`;
+- One ADR per response — pick the most significant constraint if multiple are mentioned.
+- For a follow-up, the draft covers BOTH answers as one decision, keeping every concrete fact from each (names, numbers, limits): the follow-up answer refines, bounds or adds detail to the earlier answer (e.g. "PostgreSQL is the primary datastore; Redis is allowed only for caching"). Never draft a separate decision about the follow-up alone. If neither answer is concrete, set hasConstraint to false.
+- Keep each field to 2-3 sentences maximum.
 
-export function buildConstraintAnalysisPrompt(question: string, answer: string): string {
-  return `Question: "${question}"\n\nAnswer: "${answer}"`;
+Rules for followUp:
+- Ask a follow-up only when the answer leaves an architecturally significant boundary open: whether alternatives or additional technologies are allowed (e.g. "Is PostgreSQL the only datastore, or are caches/search engines allowed?"), scope or exceptions, a measurable target behind a vague expectation, or which component owns an integration.
+- For a tentative answer ("we might use React"), the follow-up may ask what would decide the choice.
+- Never ask about something the answer already states. Never ask more than one question.
+- If the prompt says follow-ups are disabled, omit "followUp".`;
+
+export function buildConstraintAnalysisPrompt(
+  question: string,
+  answer: string,
+  parent?: ParentExchange
+): string {
+  // The topic answer's draft is held until the follow-up is answered, so this one draft is the
+  // only ADR for the topic and must cover both answers.
+  const context = parent
+    ? `This is a follow-up. Earlier question: "${parent.question}"\nEarlier answer: "${parent.answer}"\n` +
+      "Draft ONE ADR that covers both answers together, keeping every concrete fact from each.\n\n"
+    : "";
+  // Follow-ups are one level deep, so the wizard stays bounded (5 topics, at most 10 questions).
+  const followUps = parent
+    ? "Follow-ups are disabled for this answer."
+    : "Follow-ups are enabled for this answer.";
+  return `${context}Question: "${question}"\n\nAnswer: "${answer}"\n\n${followUps}`;
 }

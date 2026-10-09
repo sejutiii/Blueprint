@@ -1,0 +1,39 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="fig.css"></head>
+<body><div id="fig"><pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor Dev as Developer
+  participant UI as Extension<br/>+ panel
+  participant O as Orchestrator
+  participant DS as Diff<br/>Summarizer
+  participant RA as Retrieval<br/>Agent
+  participant CA as Compliance<br/>Agent
+  participant LLM as LLM<br/>provider
+
+  Dev->>UI: Review my changes
+  UI->>O: review("full")
+  O-->>UI: state: checking
+  O->>DS: getDiff, summarize
+  DS-->>O: DiffSummary (git + Tree-sitter)
+  par Pass 1: violations
+    O->>RA: retrieve top 5 ADRs
+    RA-->>O: relevant accepted ADRs
+    O->>CA: check(diff, ARCH.md, ADRs)
+    CA->>LLM: compliance prompt
+    LLM-->>CA: JSON: violations
+  and Pass 2: new code
+    O->>CA: detectExtensions(diff, components)
+    CA->>LLM: extension prompt
+    LLM-->>CA: JSON: planned / new / checked
+  end
+  CA-->>O: validated results
+  O->>O: write audit entries
+  O-->>UI: result, state OK / Violation
+  UI-->>Dev: items to handle
+  Dev->>UI: resolve each item
+  UI->>O: resolve / confirm / mark implemented
+  O->>O: ADR via DecisionService, or ARCH.md patch (no ADR)
+</pre></div>
+<script type="module" src="mermaid-page.js"></script>
+</body></html>

@@ -7,6 +7,18 @@ interface AdrIndex {
   adrs: ADR[];
 }
 
+export type AdrDraft = Omit<ADR, "id" | "timestamp" | "embedding">;
+
+// All index read-modify-write cycles run through one queue, so concurrent callers
+// (e.g. retrieval caching embeddings while the user saves a decision) can't lose
+// updates or hand out the same ID twice.
+let writeQueue: Promise<unknown> = Promise.resolve();
+function serialized<T>(task: () => Promise<T>): Promise<T> {
+  const run = writeQueue.then(task, task);
+  writeQueue = run.catch(() => undefined);
+  return run;
+}
+
 export class AdrStore {
   constructor(private readonly root: vscode.Uri) {}
 
@@ -30,9 +42,7 @@ export class AdrStore {
 
   private async readIndex(): Promise<AdrIndex> {
     try {
-      const raw = await vscode.workspace.fs.readFile(
-        this.uri(".blueprint", "adr-index.json")
-      );
+      const raw = await vscode.workspace.fs.readFile(this.uri(".blueprint", "adr-index.json"));
       return JSON.parse(Buffer.from(raw).toString("utf-8")) as AdrIndex;
     } catch {
       return { nextId: 1, adrs: [] };
@@ -47,55 +57,67 @@ export class AdrStore {
     );
   }
 
-  async create(draft: Omit<ADR, "id" | "timestamp" | "embedding">): Promise<ADR> {
-    const index = await this.readIndex();
-    const adr: ADR = {
-      ...draft,
-      id:        String(index.nextId).padStart(4, "0"),
-      timestamp: new Date().toISOString(),
-    };
-
+  private async writeMarkdown(adr: ADR): Promise<void> {
     await this.ensureDir(this.uri("docs", "adr"));
     await vscode.workspace.fs.writeFile(
       this.uri("docs", "adr", adrFilename(adr)),
       Buffer.from(renderAdrMd(adr), "utf-8")
     );
+  }
 
-    index.adrs.push(adr);
-    index.nextId += 1;
-    await this.writeIndex(index);
+  create(draft: AdrDraft): Promise<ADR> {
+    return serialized(async () => {
+      const index = await this.readIndex();
+      const adr: ADR = {
+        ...draft,
+        id:        String(index.nextId).padStart(4, "0"),
+        timestamp: new Date().toISOString(),
+      };
 
-    return adr;
+      await this.writeMarkdown(adr);
+      index.adrs.push(adr);
+      index.nextId += 1;
+      await this.writeIndex(index);
+      return adr;
+    });
   }
 
   async getAll(): Promise<ADR[]> {
-    const index = await this.readIndex();
-    return index.adrs;
+    return (await this.readIndex()).adrs;
   }
 
   async getById(id: string): Promise<ADR | null> {
-    const index = await this.readIndex();
-    return index.adrs.find((a) => a.id === id) ?? null;
+    return (await this.getAll()).find((a) => a.id === id) ?? null;
   }
 
-  async update(id: string, changes: Partial<Omit<ADR, "id" | "timestamp">>): Promise<ADR> {
-    const index = await this.readIndex();
-    const i = index.adrs.findIndex((a) => a.id === id);
-    if (i === -1) { throw new Error(`ADR ${id} not found`); }
+  /** Update an ADR in both the index and its markdown file (T43). A title change renames the file. */
+  update(id: string, changes: Partial<Omit<ADR, "id" | "timestamp">>): Promise<ADR> {
+    return serialized(async () => {
+      const index = await this.readIndex();
+      const i = index.adrs.findIndex((a) => a.id === id);
+      if (i === -1) { throw new Error(`ADR ${id} not found`); }
 
-    const updated: ADR = { ...index.adrs[i], ...changes };
-    index.adrs[i] = updated;
+      const previous = index.adrs[i];
+      const updated: ADR = { ...previous, ...changes };
+      index.adrs[i] = updated;
 
-    await vscode.workspace.fs.writeFile(
-      this.uri("docs", "adr", adrFilename(updated)),
-      Buffer.from(renderAdrMd(updated), "utf-8")
-    );
-    await this.writeIndex(index);
-
-    return updated;
+      if (adrFilename(previous) !== adrFilename(updated)) {
+        try { await vscode.workspace.fs.delete(this.uri("docs", "adr", adrFilename(previous))); } catch { /* already gone */ }
+      }
+      await this.writeMarkdown(updated);
+      await this.writeIndex(index);
+      return updated;
+    });
   }
 
-  async storeEmbedding(id: string, embedding: number[]): Promise<void> {
-    await this.update(id, { embedding });
+  /** Cache an embedding in the index only — the markdown file doesn't contain it, so it isn't rewritten. */
+  storeEmbedding(id: string, embedding: number[]): Promise<void> {
+    return serialized(async () => {
+      const index = await this.readIndex();
+      const adr   = index.adrs.find((a) => a.id === id);
+      if (!adr) { return; }
+      adr.embedding = embedding;
+      await this.writeIndex(index);
+    });
   }
 }

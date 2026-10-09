@@ -213,6 +213,73 @@
       color: var(--vscode-editorInfo-foreground, var(--vscode-foreground));
     }
 
+    .key-help { font-size: 11px; color: var(--vscode-descriptionForeground); margin-top: 6px; }
+    .key-help a { color: var(--vscode-textLink-foreground); text-decoration: none; }
+    .key-help a:hover { text-decoration: underline; }
+
+    .followup-context {
+      font-size: 11px;
+      color: var(--vscode-descriptionForeground);
+      border-left: 2px solid var(--vscode-button-background);
+      padding: 4px 0 4px 10px;
+      margin-bottom: 10px;
+      line-height: 1.5;
+    }
+    .followup-tag {
+      display: inline-block;
+      font-size: 10px; font-weight: 700; letter-spacing: 0.4px;
+      padding: 1px 6px; border-radius: 3px; margin-right: 6px;
+      background: var(--vscode-badge-background); color: var(--vscode-badge-foreground);
+    }
+    .inline-error {
+      font-size: 12px;
+      color: var(--vscode-errorForeground);
+      background: var(--vscode-inputValidation-errorBackground);
+      border: 1px solid var(--vscode-inputValidation-errorBorder);
+      border-radius: 3px;
+      padding: 8px 10px;
+      margin-bottom: 14px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    /* Team & roles */
+    .identity {
+      font-size: 12px;
+      padding: 8px 12px;
+      border-radius: 4px;
+      background: var(--vscode-textBlockQuote-background);
+      margin-bottom: 16px;
+    }
+    .identity code, .roles-note code, .hint code {
+      font-family: var(--vscode-editor-font-family);
+      font-size: 11px;
+    }
+    .choices { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+    .choice {
+      display: flex; gap: 10px; align-items: flex-start;
+      padding: 10px 12px;
+      border: 1px solid var(--vscode-input-border);
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: normal;
+      margin: 0;
+    }
+    .choice:hover { border-color: var(--vscode-focusBorder); }
+    .choice.disabled { opacity: 0.5; cursor: not-allowed; }
+    .choice input { margin-top: 2px; }
+    .choice-title { font-size: 13px; font-weight: 500; display: block; }
+    .choice-desc { font-size: 11px; color: var(--vscode-descriptionForeground); display: block; margin-top: 2px; line-height: 1.5; }
+    .hint { font-size: 11px; color: var(--vscode-descriptionForeground); margin-top: 5px; line-height: 1.5; }
+    .roles-note {
+      font-size: 11px;
+      color: var(--vscode-descriptionForeground);
+      border-left: 2px solid var(--vscode-input-border);
+      padding: 2px 0 2px 10px;
+      margin: -8px 0 20px;
+      line-height: 1.5;
+    }
+
     .hidden { display: none !important; }
   </style>
 </head>
@@ -225,6 +292,7 @@
     <div class="step-dot" id="dot-1"></div>
     <div class="step-dot" id="dot-2"></div>
     <div class="step-dot" id="dot-3"></div>
+    <div class="step-dot" id="dot-4"></div>
     <span id="step-label"></span>
   </div>
 
@@ -266,10 +334,71 @@
       <div class="field">
         <label for="api-key-input">API Key</label>
         <input type="password" id="api-key-input" placeholder="Paste your API key here" autocomplete="off" />
+        <p class="key-help" id="key-help">
+          <span id="key-help-text"></span>
+          <a href="#" id="key-help-link">Get a key ↗</a>
+        </p>
       </div>
+
+      <div id="provider-error" class="inline-error hidden"></div>
 
       <div class="actions">
         <button id="btn-provider-next">Next →</button>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════
+         SCREEN — Team & roles (only when there is no roles.json)
+    ════════════════════════════════════ -->
+    <div id="screen-roles" class="hidden">
+      <h2>Team &amp; Roles</h2>
+      <p class="subtitle">
+        <strong>Architects</strong> approve decisions, and their own decisions update <code>ARCH.md</code> straight away.
+        Everyone else is a <strong>Developer</strong>: their decisions wait for an Architect's approval.
+      </p>
+
+      <div class="identity" id="roles-identity"></div>
+
+      <div class="choices">
+        <label class="choice" id="choice-solo">
+          <input type="radio" name="roles-mode" value="solo" />
+          <span><span class="choice-title">Just me</span>
+            <span class="choice-desc">You become the only Architect. Anyone who joins later is a Developer until you add them.</span></span>
+        </label>
+        <label class="choice" id="choice-team">
+          <input type="radio" name="roles-mode" value="team" />
+          <span><span class="choice-title">A team</span>
+            <span class="choice-desc">You are an Architect. Add the other Architects, and Developers if you like.</span></span>
+        </label>
+        <label class="choice" id="choice-skip">
+          <input type="radio" name="roles-mode" value="skip" />
+          <span><span class="choice-title">Skip for now</span>
+            <span class="choice-desc">No roles: everyone is an Architect. Set them up later with <em>BluePrint: Configure Roles</em>.</span></span>
+        </label>
+      </div>
+
+      <div id="roles-team-fields" class="hidden">
+        <div class="field">
+          <label for="roles-architects">Other Architects</label>
+          <textarea id="roles-architects" style="min-height:60px" placeholder="lead@company.com"></textarea>
+        </div>
+        <div class="field">
+          <label for="roles-developers">Developers <span style="font-weight:normal;opacity:0.7">(optional, for the record)</span></label>
+          <textarea id="roles-developers" style="min-height:60px" placeholder="dev1@company.com&#10;dev2@company.com"></textarea>
+          <p class="hint">One email per line, matching each person's <code>git config user.email</code>. Anyone not listed as an Architect is a Developer anyway.</p>
+        </div>
+      </div>
+
+      <p class="hint" id="roles-commit-hint">
+        Saved to <code>.blueprint/roles.json</code>. Commit it so the whole team shares it. Roles are an agreement, not a lock:
+        anyone who can push can edit that file, so protect it with code review (for example a CODEOWNERS rule).
+      </p>
+
+      <div id="roles-error" class="inline-error hidden" style="margin-top:14px"></div>
+
+      <div class="actions">
+        <button class="secondary" id="btn-roles-back">← Back</button>
+        <button id="btn-roles-next">Continue →</button>
       </div>
     </div>
 
@@ -279,6 +408,7 @@
     <div id="screen-description" class="hidden">
       <h2>Describe Your System</h2>
       <p class="subtitle">Describe your project in plain English. BluePrint will extract components, data flow, and constraints to generate your initial <code>ARCH.md</code>.</p>
+      <p class="roles-note hidden" id="roles-note"></p>
 
       <div class="field">
         <label for="system-name">Project Name</label>
@@ -315,6 +445,7 @@
         <div class="success-icon">✓</div>
         <h2>Architecture Generated!</h2>
         <p id="arch-done-summary"></p>
+        <p style="margin-top:-12px">Not now? You can answer these questions later, or record any decision in your own words, with <strong>BluePrint: Add Decision</strong>.</p>
         <div class="btn-row">
           <button class="secondary" id="btn-skip-constraints">Done — View ARCH.md</button>
           <button id="btn-start-constraints">Surface Constraints →</button>
@@ -336,8 +467,13 @@
         <span class="progress-label" id="constraint-progress-label">Question 1 of 5</span>
       </div>
 
+      <div id="cq-error" class="inline-error hidden"></div>
+
       <!-- Sub-state: question -->
       <div id="cq-question">
+        <div id="cq-followup-context" class="followup-context hidden">
+          <span class="followup-tag">FOLLOW-UP</span>Based on your answer: <em id="cq-parent-answer"></em>
+        </div>
         <p class="question-text" id="cq-question-text"></p>
         <div class="field">
           <textarea id="cq-answer" style="min-height:90px"></textarea>
@@ -358,7 +494,7 @@
 
       <!-- Sub-state: draft review -->
       <div id="cq-draft" class="hidden">
-        <div class="draft-banner">Constraint detected — review the draft ADR before saving</div>
+        <div class="draft-banner" id="draft-banner">Constraint detected. Review and edit the draft ADR before saving.</div>
         <div class="field">
           <label for="draft-title">Title</label>
           <input type="text" id="draft-title" />
@@ -388,7 +524,7 @@
     <div id="screen-done" class="hidden">
       <div class="success-wrap">
         <div class="success-icon">✓</div>
-        <h2>Project Initialized!</h2>
+        <h2 id="done-title">Project Initialized!</h2>
         <p id="done-summary"></p>
         <div class="btn-row">
           <button id="btn-view-arch-done">Open ARCH.md →</button>
@@ -417,7 +553,7 @@
 
   // ── Screen management ──────────────────────────────
   const allScreens = [
-    'screen-key-choice', 'screen-provider', 'screen-description', 'screen-arch-loading',
+    'screen-key-choice', 'screen-provider', 'screen-roles', 'screen-description', 'screen-arch-loading',
     'screen-arch-done', 'screen-constraints', 'screen-done', 'screen-error',
   ];
 
@@ -434,15 +570,13 @@
   }
 
   // ── Step indicator ─────────────────────────────────
+  // Steps: 1 provider, 2 team & roles, 3 describe system, 4 constraints.
+  const STEPS = { provider: 1, roles: 2, description: 3, constraints: 4 };
   function setDots(step) {
-    // step: 1, 2, 3, or 'done'
-    const dots = [
-      document.getElementById('dot-1'),
-      document.getElementById('dot-2'),
-      document.getElementById('dot-3'),
-    ];
-    const labels = ['Step 1 of 3', 'Step 2 of 3', 'Step 3 of 3', 'Complete'];
-    const stepIdx = step === 'done' ? 3 : step - 1;
+    // step: 1–4, or 'done'
+    const dots = [1, 2, 3, 4].map(n => document.getElementById(`dot-${n}`));
+    const labels = ['Step 1 of 4', 'Step 2 of 4', 'Step 3 of 4', 'Step 4 of 4', 'Complete'];
+    const stepIdx = step === 'done' ? 4 : step - 1;
 
     dots.forEach((d, i) => {
       d.className = 'step-dot';
@@ -453,35 +587,204 @@
   }
 
   // ── Initial state ──────────────────────────────────
+  let constraintsOnly = false;
   setDots(1);
   showScreen('screen-provider');
+
+  // ── After the provider: roles step, unless roles.json already exists ─
+  let roles = null; // { identity, role, configured, architects, developers }
+
+  function afterProvider() {
+    if (roles && !roles.configured) {
+      showRolesScreen();
+    } else {
+      showDescription();
+    }
+  }
+
+  function showDescription() {
+    renderRolesNote();
+    showScreen('screen-description');
+    setDots(STEPS.description);
+  }
+
+  // One line on the description screen saying which roles are in force.
+  let rolesSkipped = false;
+  function renderRolesNote() {
+    const note = document.getElementById('roles-note');
+    if (!roles) { note.classList.add('hidden'); return; }
+    if (roles.configured) {
+      const a = roles.architects.length, d = roles.developers.length;
+      note.textContent = `Roles from .blueprint/roles.json: you are ${roles.role === 'architect' ? 'an Architect' : 'a Developer'} ` +
+        `(${a} Architect${a !== 1 ? 's' : ''}${d ? `, ${d} Developer${d !== 1 ? 's' : ''}` : ''}).`;
+    } else if (rolesSkipped) {
+      note.textContent = 'No roles configured: everyone is an Architect. Use BluePrint: Configure Roles to set them up later.';
+    } else {
+      note.classList.add('hidden');
+      return;
+    }
+    note.classList.remove('hidden');
+  }
+
+  // ── Team & roles ───────────────────────────────────
+  function setRolesError(message) {
+    const box = document.getElementById('roles-error');
+    box.textContent = message || '';
+    box.classList.toggle('hidden', !message);
+  }
+
+  function rolesMode() {
+    return document.querySelector('input[name="roles-mode"]:checked')?.value;
+  }
+
+  function renderIdentity() {
+    const box = document.getElementById('roles-identity');
+    box.replaceChildren();
+    const known = !!(roles && roles.identity);
+    if (known) {
+      box.append('You: ');
+      const strong = document.createElement('strong');
+      strong.textContent = roles.identity;
+      box.append(strong, ' (from git config user.email)');
+    } else {
+      box.append("Your git email isn't set, so BluePrint can't tell who you are. Run ");
+      const code = document.createElement('code');
+      code.textContent = 'git config user.email you@example.com';
+      const again = document.createElement('a');
+      again.href = '#';
+      again.textContent = 'Check again';
+      again.addEventListener('click', (e) => { e.preventDefault(); vscode.postMessage({ command: 'refreshRoles' }); });
+      box.append(code, ', then ', again, '.');
+    }
+    // Roles can't name you without an identity, so only "Skip" is possible until git knows your email.
+    ['solo', 'team'].forEach(mode => {
+      const label = document.getElementById(`choice-${mode}`);
+      label.classList.toggle('disabled', !known);
+      label.querySelector('input').disabled = !known;
+    });
+    if (!known && rolesMode() !== 'skip') {
+      document.querySelectorAll('input[name="roles-mode"]').forEach(r => { r.checked = r.value === 'skip'; });
+    } else if (known && !rolesMode()) {
+      document.querySelector('input[name="roles-mode"][value="solo"]').checked = true;
+    }
+    updateRolesFields();
+  }
+
+  function updateRolesFields() {
+    const mode = rolesMode();
+    document.getElementById('roles-team-fields').classList.toggle('hidden', mode !== 'team');
+    document.getElementById('roles-commit-hint').classList.toggle('hidden', mode === 'skip');
+  }
+
+  function showRolesScreen() {
+    rolesStepShown = true;
+    setRolesError('');
+    renderIdentity();
+    showScreen('screen-roles');
+    setDots(STEPS.roles);
+  }
+
+  document.querySelectorAll('input[name="roles-mode"]').forEach(r =>
+    r.addEventListener('change', () => { setRolesError(''); updateRolesFields(); })
+  );
+
+  document.getElementById('btn-roles-back').addEventListener('click', () => {
+    showScreen('screen-provider');
+    setDots(STEPS.provider);
+  });
+
+  function resetRolesButton() {
+    const btn = document.getElementById('btn-roles-next');
+    btn.disabled = false;
+    btn.textContent = 'Continue →';
+  }
+
+  document.getElementById('btn-roles-next').addEventListener('click', () => {
+    const mode = rolesMode();
+    setRolesError('');
+    if (mode === 'skip') {
+      rolesSkipped = true;
+      showDescription();
+      return;
+    }
+    const btn = document.getElementById('btn-roles-next');
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    vscode.postMessage({
+      command: 'saveRoles',
+      architects: mode === 'team' ? document.getElementById('roles-architects').value : '',
+      developers: mode === 'team' ? document.getElementById('roles-developers').value : '',
+    });
+  });
 
   // ── Screen 0: Default key choice ───────────────────
   document.getElementById('btn-use-default').addEventListener('click', () => {
     vscode.postMessage({ command: 'useDefault' });
-    showScreen('screen-description');
-    setDots(2);
+    afterProvider();
   });
 
   document.getElementById('btn-use-own').addEventListener('click', () => {
     showScreen('screen-provider');
-    setDots(1);
+    setDots(STEPS.provider);
   });
 
   // ── Screen 1: Provider ─────────────────────────────
+  let keyPages = {};
+
+  function updateKeyHelp() {
+    const provider = document.getElementById('provider-select').value;
+    const page = keyPages[provider];
+    document.getElementById('key-help').classList.toggle('hidden', !page);
+    if (!page) return;
+    document.getElementById('key-help-text').textContent = page.free
+      ? 'Free keys are available and take about a minute to create.'
+      : 'This provider requires a paid account.';
+  }
+
+  function setProviderError(message) {
+    const box = document.getElementById('provider-error');
+    box.textContent = message || '';
+    box.classList.toggle('hidden', !message);
+  }
+
+  document.getElementById('provider-select').addEventListener('change', () => {
+    setProviderError('');
+    updateKeyHelp();
+  });
+
+  document.getElementById('key-help-link').addEventListener('click', (e) => {
+    e.preventDefault();
+    vscode.postMessage({ command: 'openKeyPage', provider: document.getElementById('provider-select').value });
+  });
+
   document.getElementById('btn-provider-next').addEventListener('click', () => {
     const provider = document.getElementById('provider-select').value;
     const apiKey   = document.getElementById('api-key-input').value.trim();
     if (!apiKey) { document.getElementById('api-key-input').focus(); return; }
+    setProviderError('');
+    const btn = document.getElementById('btn-provider-next');
+    btn.disabled = true;
+    btn.textContent = 'Checking key…';
+    // Wait for the host to confirm the key works (providerSaved / providerError).
     vscode.postMessage({ command: 'saveProvider', provider, apiKey });
-    showScreen('screen-description');
-    setDots(2);
   });
 
+  function resetProviderButton() {
+    const btn = document.getElementById('btn-provider-next');
+    btn.disabled = false;
+    btn.textContent = 'Next →';
+  }
+
   // ── Screen 2: Description ──────────────────────────
+  // Back goes to the roles step only if this run showed it (roles.json absent, or just created by it).
+  let rolesStepShown = false;
   document.getElementById('btn-description-back').addEventListener('click', () => {
-    showScreen('screen-provider');
-    setDots(1);
+    if (rolesStepShown) {
+      showRolesScreen();
+    } else {
+      showScreen('screen-provider');
+      setDots(STEPS.provider);
+    }
   });
 
   document.getElementById('btn-generate').addEventListener('click', () => {
@@ -501,29 +804,55 @@
   });
 
   // ── Constraint: submit answer ──────────────────────
+  function setInlineError(message) {
+    const box = document.getElementById('cq-error');
+    box.textContent = message || '';
+    box.classList.toggle('hidden', !message);
+  }
+
+  function setDraftButtonsDisabled(disabled) {
+    document.getElementById('btn-save-draft').disabled = disabled;
+    document.getElementById('btn-discard-draft').disabled = disabled;
+  }
+
   document.getElementById('btn-submit-answer').addEventListener('click', () => {
     const answer = document.getElementById('cq-answer').value.trim();
+    setInlineError('');
     vscode.postMessage({ command: 'submitAnswer', answer });
   });
 
+  document.getElementById('cq-answer').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      document.getElementById('btn-submit-answer').click();
+    }
+  });
+
   document.getElementById('btn-skip-question').addEventListener('click', () => {
+    setInlineError('');
     vscode.postMessage({ command: 'skipQuestion' });
   });
 
   // ── Constraint: draft review ───────────────────────
   document.getElementById('btn-save-draft').addEventListener('click', () => {
-    vscode.postMessage({
-      command: 'saveDraft',
-      draft: {
-        title:        document.getElementById('draft-title').value,
-        context:      document.getElementById('draft-context').value,
-        decision:     document.getElementById('draft-decision').value,
-        consequences: document.getElementById('draft-consequences').value,
-      },
-    });
+    const draft = {
+      title:        document.getElementById('draft-title').value.trim(),
+      context:      document.getElementById('draft-context').value.trim(),
+      decision:     document.getElementById('draft-decision').value.trim(),
+      consequences: document.getElementById('draft-consequences').value.trim(),
+    };
+    if (!draft.title || !draft.decision) {
+      setInlineError('An ADR needs at least a title and a decision.');
+      document.getElementById(draft.title ? 'draft-decision' : 'draft-title').focus();
+      return;
+    }
+    setInlineError('');
+    setDraftButtonsDisabled(true); // prevent a double click from saving the ADR twice
+    vscode.postMessage({ command: 'saveDraft', draft });
   });
 
   document.getElementById('btn-discard-draft').addEventListener('click', () => {
+    setInlineError('');
+    setDraftButtonsDisabled(true);
     vscode.postMessage({ command: 'discardDraft' });
   });
 
@@ -533,16 +862,15 @@
   });
 
   document.getElementById('btn-retry').addEventListener('click', () => {
-    showScreen('screen-description');
-    setDots(2);
+    showDescription();
   });
 
   // ── Progress bar helper ────────────────────────────
-  function setProgress(index, total) {
+  function setProgress(index, total, isFollowUp) {
     const pct = total > 0 ? Math.round((index / total) * 100) : 0;
     document.getElementById('constraint-progress-fill').style.width = pct + '%';
     document.getElementById('constraint-progress-label').textContent =
-      `Question ${index + 1} of ${total}`;
+      `Topic ${index + 1} of ${total}${isFollowUp ? ' · follow-up' : ''}`;
   }
 
   // ── Messages from extension host ───────────────────
@@ -552,19 +880,60 @@
     switch (msg.command) {
 
       // Initialise: skip provider step if already configured
+      case 'providerSaved':
+        resetProviderButton();
+        document.getElementById('api-key-input').value = '';
+        afterProvider();
+        break;
+
+      case 'rolesSaved':
+        resetRolesButton();
+        roles = msg.roles;
+        showDescription();
+        break;
+
+      case 'rolesError':
+        resetRolesButton();
+        setRolesError(msg.message);
+        break;
+
+      // "Check again" after setting the git email
+      case 'rolesInfo':
+        roles = msg.roles;
+        renderIdentity();
+        break;
+
+      case 'providerError':
+        resetProviderButton();
+        setProviderError(msg.message);
+        document.getElementById('api-key-input').focus();
+        break;
+
       case 'init':
+        keyPages = msg.keyPages || {};
+        roles = msg.roles || null;
+        updateKeyHelp();
+        if (msg.mode === 'constraints') {
+          // Guided questions only (project already initialized): no provider/roles/ARCH.md steps.
+          constraintsOnly = true;
+          document.querySelector('.step-indicator').classList.add('hidden');
+          document.getElementById('done-title').textContent = 'Constraints recorded';
+          showScreen('screen-constraints');
+          showCqState('cq-analyzing');
+          vscode.postMessage({ command: 'startConstraints' });
+          break;
+        }
         if (msg.hasProvider) {
           if (msg.provider) document.getElementById('provider-select').value = msg.provider;
-          showScreen('screen-description');
-          setDots(2);
+          afterProvider();
         } else if (msg.hasDefault) {
           document.getElementById('default-provider-label').textContent =
             msg.defaultProviderLabel ? `${msg.defaultProviderLabel} API key` : 'API key';
           showScreen('screen-key-choice');
-          setDots(1);
+          setDots(STEPS.provider);
         } else {
           showScreen('screen-provider');
-          setDots(1);
+          setDots(STEPS.provider);
         }
         break;
 
@@ -584,16 +953,26 @@
       }
 
       // Begin constraint elicitation
-      case 'showQuestion':
+      case 'showQuestion': {
         showScreen('screen-constraints');
-        setDots(3);
-        setProgress(msg.index, msg.total);
+        if (!constraintsOnly) setDots(STEPS.constraints);
+        setInlineError('');
+        setDraftButtonsDisabled(false);
+        setProgress(msg.index, msg.total, msg.isFollowUp);
+        const ctx = document.getElementById('cq-followup-context');
+        if (msg.isFollowUp && msg.parent) {
+          document.getElementById('cq-parent-answer').textContent = `"${msg.parent.answer}"`;
+          ctx.classList.remove('hidden');
+        } else {
+          ctx.classList.add('hidden');
+        }
         document.getElementById('cq-question-text').textContent = msg.question;
         document.getElementById('cq-answer').placeholder = msg.placeholder || '';
         document.getElementById('cq-answer').value = '';
         showCqState('cq-question');
         document.getElementById('cq-answer').focus();
         break;
+      }
 
       // Analyzing spinner
       case 'analyzing':
@@ -607,18 +986,30 @@
         document.getElementById('draft-context').value      = d.context      || '';
         document.getElementById('draft-decision').value     = d.decision     || '';
         document.getElementById('draft-consequences').value = d.consequences || '';
+        const basis = {
+          both:  'Based on both of your answers. Review and edit the draft ADR before saving.',
+          first: 'Based on your first answer only. Review and edit the draft ADR before saving.',
+        };
+        document.getElementById('draft-banner').textContent =
+          basis[msg.basis] || 'Constraint detected. Review and edit the draft ADR before saving.';
+        setDraftButtonsDisabled(false);
         showCqState('cq-draft');
-        setProgress(msg.index, msg.total);
         break;
       }
 
       // All questions answered
       case 'elicitationComplete': {
-        const saved = msg.totalSaved;
-        document.getElementById('done-summary').textContent =
-          saved > 0
-            ? `${saved} Architectural Decision Record${saved !== 1 ? 's' : ''} saved to docs/adr/. Your project is fully initialized.`
-            : 'No ADRs were added during constraint elicitation. You can add them later via the ADR Browser.';
+        const saved   = msg.totalSaved;
+        const pending = msg.totalPending || 0;
+        let summary = saved > 0
+          ? `${saved} Architectural Decision Record${saved !== 1 ? 's' : ''} saved to docs/adr/.`
+          : 'No ADRs were added from these questions. You can record decisions any time with BluePrint: Add Decision.';
+        if (pending > 0) {
+          summary += ` ${pending} of them ${pending === 1 ? 'is' : 'are'} awaiting Architect approval; ARCH.md will list ${pending === 1 ? 'it' : 'them'} once approved.`;
+        } else if (saved > 0) {
+          summary += constraintsOnly ? ' ARCH.md constraints have been updated.' : ' ARCH.md constraints have been updated. Your project is fully initialized.';
+        }
+        document.getElementById('done-summary').textContent = summary;
         showScreen('screen-done');
         setDots('done');
         break;
@@ -626,8 +1017,18 @@
 
       // Error
       case 'error':
-        document.getElementById('error-message').textContent = msg.message;
-        showScreen('screen-error');
+        if (msg.stage === 'constraints') {
+          // Stay on the current question so the answer isn't lost.
+          setInlineError(msg.message);
+          showCqState('cq-question');
+        } else if (msg.stage === 'draft') {
+          setInlineError(msg.message);
+          setDraftButtonsDisabled(false);
+          showCqState('cq-draft');
+        } else {
+          document.getElementById('error-message').textContent = msg.message;
+          showScreen('screen-error');
+        }
         break;
     }
   });

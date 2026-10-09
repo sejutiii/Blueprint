@@ -5,6 +5,9 @@ import {
   buildPreCheckPrompt,
   PreCheckResult,
 } from "../prompts/preCheckPrompts";
+import { parseJsonObject, str, oneOf, objectArray } from "../util/llmJson";
+
+const SEVERITIES = ["low", "medium", "high"] as const;
 
 export class PreCheckAgent {
   constructor(private readonly llm: LLMClient) {}
@@ -18,18 +21,25 @@ export class PreCheckAgent {
       PRE_CHECK_SYSTEM_PROMPT,
       buildPreCheckPrompt(promptText, blueprint, adrs)
     );
-    return this.parseResponse(raw);
+    return PreCheckAgent.parseResponse(raw);
   }
 
-  private parseResponse(raw: string): PreCheckResult {
-    const cleaned = raw
-      .replace(/^```(?:json)?\s*/m, "")
-      .replace(/\s*```\s*$/m, "")
-      .trim();
-    try {
-      return JSON.parse(cleaned) as PreCheckResult;
-    } catch {
-      return { hasConflicts: false, conflicts: [] };
-    }
+  static parseResponse(raw: string): PreCheckResult {
+    const obj = parseJsonObject(raw);
+    if (!obj) { return { hasConflicts: false, conflicts: [] }; }
+
+    const conflicts = objectArray(obj.conflicts)
+      .map((c) => ({
+        constraintId: str(c.constraintId, "unspecified"),
+        description:  str(c.description),
+        severity:     oneOf(c.severity, SEVERITIES, "medium"),
+        suggestion:   str(c.suggestion),
+      }))
+      .filter((c) => c.description.trim().length > 0);
+
+    const revisedPrompt = str(obj.revisedPrompt).trim();
+    return conflicts.length > 0 && revisedPrompt
+      ? { hasConflicts: true, conflicts, revisedPrompt }
+      : { hasConflicts: conflicts.length > 0, conflicts };
   }
 }

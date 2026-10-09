@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import type { RolesView } from "../orchestrator/Orchestrator";
 
 /**
  * Manages the BluePrint status bar item shown at the bottom of the editor.
@@ -6,50 +7,105 @@ import * as vscode from "vscode";
  */
 export class StatusBarManager {
   private item: vscode.StatusBarItem;
+  private idleTimer: ReturnType<typeof setTimeout> | undefined;
+  private pending = 0;
+  private idle = false;
+  private uninitialized = false;
+  private violation = false;
+  private who = "";
 
   constructor() {
-    this.item = vscode.window.createStatusBarItem(
-      vscode.StatusBarAlignment.Left,
-      0
-    );
-    this.item.command = "blueprint.viewArch";
+    this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 0);
     this.setIdle();
     this.item.show();
   }
 
+  // Every state goes through here so no state inherits the previous one's command, colour or timer.
+  private apply(text: string, tooltip: string, command: string, warning = false, idle = false): void {
+    if (this.idleTimer) { clearTimeout(this.idleTimer); this.idleTimer = undefined; }
+    this.idle = idle;
+    this.uninitialized = false;
+    this.violation = false;
+    this.item.text = text;
+    this.item.tooltip = this.who ? `${tooltip}\n\n${this.who}` : tooltip;
+    this.item.command = command;
+    this.item.backgroundColor = warning ? new vscode.ThemeColor("statusBarItem.warningBackground") : undefined;
+  }
+
+  /** Number of decisions awaiting Architect approval; shown next to the idle label. */
+  setPending(count: number): void {
+    this.pending = count;
+  }
+
   setIdle(): void {
-    this.item.text = "$(circuit-board) BluePrint";
-    this.item.tooltip = "BluePrint — click to view architecture";
-    this.item.backgroundColor = undefined;
+    const badge = this.pending > 0 ? ` · ${this.pending} pending` : "";
+    this.apply(
+      `$(circuit-board) BluePrint${badge}`,
+      this.pending > 0
+        ? `${this.pending} decision(s) awaiting Architect approval — click to open BluePrint`
+        : "BluePrint — click to open the hub",
+      "blueprint.openHub",
+      false,
+      true
+    );
+  }
+
+  /** Redraw the idle label (e.g. after the pending count changed) without interrupting another state. */
+  refreshIdle(): void {
+    if (this.idle) { this.setIdle(); }
+  }
+
+  /** Leave "Not initialized" once the project is set up; any other state is left alone. */
+  markInitialized(): void {
+    if (this.uninitialized) { this.setIdle(); }
+  }
+
+  /** Who you are and your role, appended to every tooltip. Takes effect on the next redraw. */
+  setIdentity(roles: RolesView | null): void {
+    if (!roles) { this.who = ""; return; }
+    const role = roles.role === "architect" ? "Architect" : "Developer";
+    this.who = !roles.identity
+      ? `You: unknown (git user.email is unset) · ${role}`
+      : roles.configured
+        ? `You: ${roles.identity} · ${role}`
+        : `You: ${roles.identity} · ${role} (no roles configured, so everyone is an Architect)`;
   }
 
   setChecking(): void {
-    this.item.text = "$(sync~spin) BluePrint: Checking…";
-    this.item.tooltip = "Running compliance check";
-    this.item.backgroundColor = undefined;
+    this.apply("$(sync~spin) BluePrint: Checking…", "Running compliance check", "blueprint.openHub");
   }
 
   setViolationFound(): void {
-    this.item.text = "$(warning) BluePrint: Violation";
-    this.item.tooltip = "Architectural violation detected — click to review";
-    this.item.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
-    this.item.command = "blueprint.reviewChange";
+    this.apply(
+      "$(warning) BluePrint: Violation",
+      "Architectural violation detected — click to see the review",
+      "blueprint.showLastReview",
+      true
+    );
+    this.violation = true;
+  }
+
+  /** Every violation from the last review has been handled: back to idle, unless another state took over. */
+  clearViolation(): void {
+    if (this.violation) { this.setIdle(); }
   }
 
   setOk(): void {
-    this.item.text = "$(check) BluePrint: OK";
-    this.item.tooltip = "No architectural violations detected";
-    this.item.backgroundColor = undefined;
-    setTimeout(() => this.setIdle(), 5000);
+    this.apply("$(check) BluePrint: OK", "No architectural violations detected", "blueprint.openHub");
+    this.idleTimer = setTimeout(() => this.setIdle(), 5000);
   }
 
   setUninitialized(): void {
-    this.item.text = "$(circuit-board) BluePrint: Not initialized";
-    this.item.tooltip = "Click to initialize BluePrint for this project";
-    this.item.command = "blueprint.init";
+    this.apply(
+      "$(circuit-board) BluePrint: Not initialized",
+      "Click to initialize BluePrint for this project",
+      "blueprint.init"
+    );
+    this.uninitialized = true;
   }
 
   dispose(): void {
+    if (this.idleTimer) { clearTimeout(this.idleTimer); }
     this.item.dispose();
   }
 }

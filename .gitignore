@@ -10,3 +10,6 @@ out/
 docs/adr/
 docs/ARCH.md
 .env
+
+# Local fixture projects for manual testing (F5); each has its own nested .git
+test/

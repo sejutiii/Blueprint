@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>BluePrint CRC Diagram</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #fff; width: 2170px; font-family: "Segoe UI", Arial, sans-serif; }
+  svg { display: block; }
+  .title { font-size: 42px; font-weight: 700; fill: #1f2328; }
+  .box { fill: #d5e8d4; stroke: #82b366; stroke-width: 2; }
+  .box.evt { fill: #fff2cc; stroke: #d6b656; stroke-dasharray: 7 5; }
+  .name { font-size: 22px; font-weight: 700; fill: #1f2328; }
+  .edge { fill: none; stroke: #3b3f45; stroke-width: 2; }
+  .halo { fill: none; stroke: #fff; stroke-width: 8; }
+  .dot { fill: #3b3f45; }
+  .lbl { font-size: 18px; fill: #2d3136; paint-order: stroke; stroke: #fff; stroke-width: 5px; stroke-linejoin: round; }
+  .ev { font-weight: 700; fill: #b85450; font-family: Consolas, "Cascadia Mono", monospace; font-size: 17px; }
+  .group { fill: #f3f8f2; stroke: #82b366; stroke-width: 1.6; stroke-dasharray: 6 5; }
+  .group-lbl { font-size: 17px; font-style: italic; fill: #5d8a47; }
+  .note { fill: #fffbe6; stroke: #d6b656; stroke-width: 1.6; }
+  .note-txt { stroke: none; }
+  .note-link { fill: none; stroke: #d6b656; stroke-width: 1.6; stroke-dasharray: 5 4; }
+</style>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" width="2170" height="1150" viewBox="0 0 2170 1150">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="13" markerHeight="13" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#3b3f45"/>
+    </marker>
+  </defs>
+  <text class="title" x="30" y="52">BluePrint CRC Diagram</text>
+  <g transform="translate(0,80)">
+<rect class="group" x="522" y="714" width="1146" height="106" rx="12"/><text class="group-lbl" x="534" y="812">LLM agents</text><path class="halo" d="M275,52 L620,52"/><path class="halo" d="M275,70 L540,70 L540,226 L620,226"/><path class="halo" d="M275,256 L620,256"/><path class="halo" d="M680,84 L680,210"/><path class="halo" d="M820,210 L820,84"/><path class="halo" d="M880,226 L960,226 L960,160 L1120,160 L1120,84"/><path class="halo" d="M1120,160 L1440,160 L1440,84"/><path class="halo" d="M1440,160 L1800,160 L1800,84"/><path class="halo" d="M1150,256 L880,256"/><path class="halo" d="M650,274 L650,400"/><path class="halo" d="M850,400 L850,274"/><path class="halo" d="M880,412 L920,412 L920,330 L1200,330 L1200,274"/><path class="halo" d="M880,432 L1000,432 L1000,392 L1150,392"/><path class="halo" d="M880,452 L1020,452 L1020,512 L1150,512"/><path class="halo" d="M1700,400 L1700,300 L1300,300 L1300,274"/><path class="halo" d="M1640,412 L1500,412 L1500,392 L1340,392"/><path class="halo" d="M1640,452 L1480,452 L1480,512 L1340,512"/><path class="halo" d="M1860,432 L1980,432"/><path class="halo" d="M840,464 L840,600 L1680,600 L1680,464"/><path class="halo" d="M700,464 L700,660 L40,660 L40,730"/><path class="halo" d="M300,660 L300,730"/><path class="halo" d="M560,660 L560,730"/><path class="halo" d="M700,660 L810,660 L810,730"/><path class="halo" d="M1040,660 L1040,730"/><path class="halo" d="M1315,660 L1315,730"/><path class="halo" d="M810,660 L1740,660 L1740,730"/><path class="halo" d="M1840,464 L1840,730"/><path class="halo" d="M1930,762 L2080,762 L2080,464"/><path class="halo" d="M1825,794 L1825,910"/><path class="halo" d="M175,794 L175,910"/><path class="halo" d="M320,794 L320,910"/><path class="halo" d="M1000,820 L1000,910"/><path class="halo" d="M1475,794 L1475,910"/><path class="edge" d="M275,52 L620,52" marker-end="url(#arrow)"/><path class="edge" d="M275,70 L540,70 L540,226 L620,226" marker-end="url(#arrow)"/><path class="edge" d="M275,256 L620,256" marker-end="url(#arrow)"/><path class="edge" d="M680,84 L680,210" marker-end="url(#arrow)"/><path class="edge" d="M820,210 L820,84" marker-end="url(#arrow)"/><path class="edge" d="M880,226 L960,226 L960,160 L1120,160 L1120,84" marker-end="url(#arrow)"/><path class="edge" d="M1120,160 L1440,160 L1440,84" marker-end="url(#arrow)"/><circle cx="1120" cy="160" r="4" class="dot"/><path class="edge" d="M1440,160 L1800,160 L1800,84" marker-end="url(#arrow)"/><circle cx="1440" cy="160" r="4" class="dot"/><path class="edge" d="M1150,256 L880,256" marker-end="url(#arrow)"/><path class="edge" d="M650,274 L650,400" marker-end="url(#arrow)"/><path class="edge" d="M850,400 L850,274" marker-end="url(#arrow)"/><path class="edge" d="M880,412 L920,412 L920,330 L1200,330 L1200,274" marker-end="url(#arrow)"/><path class="edge" d="M880,432 L1000,432 L1000,392 L1150,392" marker-end="url(#arrow)"/><path class="edge" d="M880,452 L1020,452 L1020,512 L1150,512" marker-end="url(#arrow)"/><path class="edge" d="M1700,400 L1700,300 L1300,300 L1300,274" marker-end="url(#arrow)"/><path class="edge" d="M1640,412 L1500,412 L1500,392 L1340,392" marker-end="url(#arrow)"/><path class="edge" d="M1640,452 L1480,452 L1480,512 L1340,512" marker-end="url(#arrow)"/><path class="edge" d="M1860,432 L1980,432" marker-end="url(#arrow)"/><path class="edge" d="M840,464 L840,600 L1680,600 L1680,464" marker-end="url(#arrow)"/><path class="edge" d="M700,464 L700,660 L40,660 L40,730" marker-end="url(#arrow)"/><path class="edge" d="M300,660 L300,730" marker-end="url(#arrow)"/><circle cx="300" cy="660" r="4" class="dot"/><path class="edge" d="M560,660 L560,730" marker-end="url(#arrow)"/><circle cx="560" cy="660" r="4" class="dot"/><path class="edge" d="M700,660 L810,660 L810,730" marker-end="url(#arrow)"/><circle cx="700" cy="660" r="4" class="dot"/><path class="edge" d="M1040,660 L1040,730" marker-end="url(#arrow)"/><circle cx="1040" cy="660" r="4" class="dot"/><path class="edge" d="M1315,660 L1315,730" marker-end="url(#arrow)"/><circle cx="1315" cy="660" r="4" class="dot"/><path class="edge" d="M810,660 L1740,660 L1740,730" marker-end="url(#arrow)"/><circle cx="810" cy="660" r="4" class="dot"/><path class="edge" d="M1840,464 L1840,730" marker-end="url(#arrow)"/><path class="edge" d="M1930,762 L2080,762 L2080,464" marker-end="url(#arrow)"/><path class="edge" d="M1825,794 L1825,910" marker-end="url(#arrow)"/><path class="edge" d="M175,794 L175,910" marker-end="url(#arrow)"/><path class="edge" d="M320,794 L320,910" marker-end="url(#arrow)"/><path class="edge" d="M1000,820 L1000,910" marker-end="url(#arrow)"/><path class="edge" d="M1475,794 L1475,910" marker-end="url(#arrow)"/><rect class="box evt" x="30" y="20" width="245" height="64" rx="10"/><text class="name" x="152.5" y="60" text-anchor="middle">Developer</text><rect class="box " x="620" y="20" width="260" height="64" rx="10"/><text class="name" x="750" y="60" text-anchor="middle">BlueprintPanel</text><rect class="box " x="1000" y="20" width="240" height="64" rx="10"/><text class="name" x="1120" y="60" text-anchor="middle">StatusBarManager</text><rect class="box " x="1320" y="20" width="240" height="64" rx="10"/><text class="name" x="1440" y="60" text-anchor="middle">AdrTreeProvider</text><rect class="box " x="1640" y="20" width="320" height="64" rx="10"/><text class="name" x="1800" y="60" text-anchor="middle">AuditTrailTreeProvider</text><rect class="box evt" x="30" y="210" width="245" height="64" rx="10"/><text class="name" x="152.5" y="250" text-anchor="middle">VS Code Workspace</text><rect class="box " x="620" y="210" width="260" height="64" rx="10"/><text class="name" x="750" y="250" text-anchor="middle">Extension</text><rect class="box " x="1150" y="210" width="190" height="64" rx="10"/><text class="name" x="1245" y="250" text-anchor="middle">AuditLog</text><rect class="box " x="1150" y="345" width="190" height="64" rx="10"/><text class="name" x="1245" y="385" text-anchor="middle">AccessControl</text><rect class="box " x="620" y="400" width="260" height="64" rx="10"/><text class="name" x="750" y="440" text-anchor="middle">Orchestrator</text><rect class="box " x="1640" y="400" width="220" height="64" rx="10"/><text class="name" x="1750" y="440" text-anchor="middle">DecisionService</text><rect class="box " x="1980" y="400" width="170" height="64" rx="10"/><text class="name" x="2065" y="440" text-anchor="middle">AdrStore</text><rect class="box " x="1150" y="480" width="190" height="64" rx="10"/><text class="name" x="1245" y="520" text-anchor="middle">FileStore</text><rect class="box " x="20" y="730" width="230" height="64" rx="10"/><text class="name" x="135" y="770" text-anchor="middle">CodebaseSnapshot</text><rect class="box " x="280" y="730" width="210" height="64" rx="10"/><text class="name" x="385" y="770" text-anchor="middle">DiffSummarizer</text><rect class="box " x="540" y="730" width="220" height="64" rx="10"/><text class="name" x="650" y="770" text-anchor="middle">ComplianceAgent</text><rect class="box " x="790" y="730" width="200" height="64" rx="10"/><text class="name" x="890" y="770" text-anchor="middle">PreCheckAgent</text><rect class="box " x="1020" y="730" width="245" height="64" rx="10"/><text class="name" x="1142.5" y="770" text-anchor="middle">ArchitectureAgent</text><rect class="box " x="1295" y="730" width="355" height="64" rx="10"/><text class="name" x="1472.5" y="770" text-anchor="middle">ConstraintElicitationAgent</text><rect class="box " x="1720" y="730" width="210" height="64" rx="10"/><text class="name" x="1825" y="770" text-anchor="middle">RetrievalAgent</text><rect class="box " x="80" y="910" width="270" height="64" rx="10"/><text class="name" x="215" y="950" text-anchor="middle">TreeSitterExtractor</text><rect class="box " x="900" y="910" width="200" height="64" rx="10"/><text class="name" x="1000" y="950" text-anchor="middle">LLMClient</text><rect class="box " x="1350" y="910" width="250" height="64" rx="10"/><text class="name" x="1475" y="950" text-anchor="middle">ElicitationSession</text><rect class="box " x="1710" y="910" width="230" height="64" rx="10"/><text class="name" x="1825" y="950" text-anchor="middle">EmbeddingService</text><path class="note" d="M290,372 h304 l16,16 v170 h-320 z"/><text class="lbl note-txt" x="304" y="402" text-anchor="start" xml:space="preserve">dispatches events:</text>
+<text class="lbl note-txt" x="304" y="424" text-anchor="start" xml:space="preserve"><tspan class="ev">PROJECT_INIT</tspan></text>
+<text class="lbl note-txt" x="304" y="446" text-anchor="start" xml:space="preserve"><tspan class="ev">PROMPT_SUBMITTED</tspan></text>
+<text class="lbl note-txt" x="304" y="468" text-anchor="start" xml:space="preserve"><tspan class="ev">CODE_GENERATED</tspan></text>
+<text class="lbl note-txt" x="304" y="490" text-anchor="start" xml:space="preserve"><tspan class="ev">MANUAL_REVIEW_REQUESTED</tspan></text>
+<text class="lbl note-txt" x="304" y="512" text-anchor="start" xml:space="preserve">+ decision, approval, roles,</text>
+<text class="lbl note-txt" x="304" y="534" text-anchor="start" xml:space="preserve">   regenerate requests</text><path class="note-link" d="M610,432 H650"/><text class="lbl" x="447" y="42" text-anchor="middle" xml:space="preserve">fills webview forms</text><text class="lbl" x="530" y="140" text-anchor="end" xml:space="preserve">runs commands,</text>
+<text class="lbl" x="530" y="162" text-anchor="end" xml:space="preserve">sidebar actions</text><text class="lbl" x="285" y="296" text-anchor="start" xml:space="preserve"><tspan class="ev">file created</tspan> → offer review</text>
+<text class="lbl" x="285" y="318" text-anchor="start" xml:space="preserve"><tspan class="ev">ARCH.md, ADRs, roles.json</tspan></text>
+<text class="lbl" x="285" y="340" text-anchor="start" xml:space="preserve"><tspan class="ev">changed</tspan> → refresh views</text><text class="lbl" x="672" y="140" text-anchor="end" xml:space="preserve">posts form</text>
+<text class="lbl" x="672" y="162" text-anchor="end" xml:space="preserve">messages</text><text class="lbl" x="828" y="120" text-anchor="start" xml:space="preserve">opens panels,</text>
+<text class="lbl" x="828" y="142" text-anchor="start" xml:space="preserve">posts results</text><text class="lbl" x="1128" y="112" text-anchor="start" xml:space="preserve">sets state, role,</text>
+<text class="lbl" x="1128" y="134" text-anchor="start" xml:space="preserve">pending count</text><text class="lbl" x="1448" y="122" text-anchor="start" xml:space="preserve">refresh(ADRs)</text><text class="lbl" x="1808" y="122" text-anchor="start" xml:space="preserve">refresh(ADRs)</text><text class="lbl" x="1380" y="186" text-anchor="middle" xml:space="preserve"><tspan class="ev">onState / onDataChanged</tspan> → refresh views</text><text class="lbl" x="1015" y="284" text-anchor="middle" xml:space="preserve"><tspan class="ev">onAppend</tspan>: entry added →</text>
+<text class="lbl" x="1015" y="306" text-anchor="middle" xml:space="preserve">refresh audit trail</text><text class="lbl" x="842" y="312" text-anchor="end" xml:space="preserve">hooks:</text>
+<text class="lbl" x="842" y="334" text-anchor="end" xml:space="preserve"><tspan class="ev">onState</tspan></text>
+<text class="lbl" x="842" y="356" text-anchor="end" xml:space="preserve"><tspan class="ev">onDataChanged</tspan></text><text class="lbl" x="928" y="354" text-anchor="start" xml:space="preserve">logs reviews, pre-checks,</text>
+<text class="lbl" x="928" y="376" text-anchor="start" xml:space="preserve">role changes</text><text class="lbl" x="1008" y="416" text-anchor="start" xml:space="preserve">checks</text>
+<text class="lbl" x="1008" y="438" text-anchor="start" xml:space="preserve">Architect role</text><text class="lbl" x="1012" y="480" text-anchor="end" xml:space="preserve">on init /</text>
+<text class="lbl" x="1012" y="502" text-anchor="end" xml:space="preserve">regenerate:</text>
+<text class="lbl" x="1012" y="524" text-anchor="end" xml:space="preserve">writes ARCH.md</text><text class="lbl" x="1500" y="290" text-anchor="middle" xml:space="preserve">records ADR events</text><text class="lbl" x="1492" y="416" text-anchor="end" xml:space="preserve">resolves role:</text>
+<text class="lbl" x="1492" y="438" text-anchor="end" xml:space="preserve">accept or queue</text><text class="lbl" x="1350" y="546" text-anchor="start" xml:space="preserve">on acceptance:</text>
+<text class="lbl" x="1350" y="568" text-anchor="start" xml:space="preserve">patches ARCH.md</text><text class="lbl" x="1920" y="378" text-anchor="middle" xml:space="preserve">creates /</text>
+<text class="lbl" x="1920" y="400" text-anchor="middle" xml:space="preserve">updates ADRs</text><text class="lbl" x="1180" y="590" text-anchor="middle" xml:space="preserve">propose / approve / reject ADR</text><text class="lbl" x="1180" y="626" text-anchor="middle" xml:space="preserve"><tspan class="ev">violation resolved</tspan> · <tspan class="ev">extension confirmed</tspan> · <tspan class="ev">decision saved</tspan> · <tspan class="ev">approve / reject</tspan></text><text class="lbl" x="48" y="686" text-anchor="start" xml:space="preserve"><tspan class="ev">regenerate</tspan>:</text>
+<text class="lbl" x="48" y="708" text-anchor="start" xml:space="preserve">snapshot codebase</text><text class="lbl" x="308" y="686" text-anchor="start" xml:space="preserve"><tspan class="ev">review</tspan>:</text>
+<text class="lbl" x="308" y="708" text-anchor="start" xml:space="preserve">summarize diff</text><text class="lbl" x="568" y="686" text-anchor="start" xml:space="preserve"><tspan class="ev">review</tspan>: run</text>
+<text class="lbl" x="568" y="708" text-anchor="start" xml:space="preserve">Pass 1 ‖ Pass 2</text><text class="lbl" x="818" y="686" text-anchor="start" xml:space="preserve"><tspan class="ev">PROMPT_SUBMITTED</tspan>:</text>
+<text class="lbl" x="818" y="708" text-anchor="start" xml:space="preserve">check prompt</text><text class="lbl" x="1048" y="686" text-anchor="start" xml:space="preserve"><tspan class="ev">PROJECT_INIT / regenerate</tspan>:</text>
+<text class="lbl" x="1048" y="708" text-anchor="start" xml:space="preserve">draft blueprint</text><text class="lbl" x="1323" y="686" text-anchor="start" xml:space="preserve"><tspan class="ev">wizard answer</tspan> /</text>
+<text class="lbl" x="1323" y="708" text-anchor="start" xml:space="preserve"><tspan class="ev">Add Decision</tspan>: draft ADR</text><text class="lbl" x="1732" y="708" text-anchor="end" xml:space="preserve">rank relevant ADRs</text><text class="lbl" x="1848" y="548" text-anchor="start" xml:space="preserve">on acceptance:</text>
+<text class="lbl" x="1848" y="570" text-anchor="start" xml:space="preserve">cache embedding</text><text class="lbl" x="2072" y="632" text-anchor="end" xml:space="preserve">reads ADRs,</text>
+<text class="lbl" x="2072" y="654" text-anchor="end" xml:space="preserve">stores embeddings</text><text class="lbl" x="1833" y="848" text-anchor="start" xml:space="preserve">embeds text</text>
+<text class="lbl" x="1833" y="870" text-anchor="start" xml:space="preserve">(MiniLM, local)</text><text class="lbl" x="167" y="848" text-anchor="end" xml:space="preserve">top-level</text>
+<text class="lbl" x="167" y="870" text-anchor="end" xml:space="preserve">declarations</text><text class="lbl" x="328" y="848" text-anchor="start" xml:space="preserve">new imports &amp;</text>
+<text class="lbl" x="328" y="870" text-anchor="start" xml:space="preserve">declarations</text><text class="lbl" x="1010" y="852" text-anchor="start" xml:space="preserve">sends prompts to the chat model</text>
+<text class="lbl" x="1010" y="874" text-anchor="start" xml:space="preserve">(Gemini, Groq, OpenRouter, Anthropic, OpenAI)</text><text class="lbl" x="1483" y="852" text-anchor="start" xml:space="preserve">tracks wizard</text>
+<text class="lbl" x="1483" y="874" text-anchor="start" xml:space="preserve">topics &amp; follow-ups</text><rect class="box evt" x="30" y="1010" width="52" height="30" rx="6"/><text class="lbl" x="94" y="1032">event source outside the extension</text><rect class="box" x="450" y="1010" width="52" height="30" rx="6"/><text class="lbl" x="514" y="1032">class (or «module» of functions)</text><text class="lbl" x="850" y="1032"><tspan class="ev">EVENT</tspan> triggers the action after it</text><path class="edge" d="M1220,1025 H1290" marker-end="url(#arrow)"/><text class="lbl" x="1304" y="1032">calls / notifies</text><circle cx="1500" cy="1025" r="4" class="dot"/><path class="edge" d="M1500,1025 H1560" marker-end="url(#arrow)"/><text class="lbl" x="1574" y="1032">branch of a shared line</text>
+  </g>
+</svg>
+<script>
+if (location.hash === "#check") {
+  const pad = 1;
+  const rectOf = (el) => { const b = el.getBBox(); return { x: b.x + pad, y: b.y + pad, w: b.width - 2 * pad, h: b.height - 2 * pad }; };
+  const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  const texts = [...document.querySelectorAll("g text")].map((el) => ({ el, r: rectOf(el), s: el.textContent }));
+  const boxes = [...document.querySelectorAll("g rect.box")].map((el) => ({ r: rectOf(el) }));
+  const segs = [];
+  document.querySelectorAll("g path.edge, g path.note-link").forEach((p) => {
+    const pts = [...p.getAttribute("d").matchAll(/(-?[\d.]+),(-?[\d.]+)/g)].map((m) => [+m[1], +m[2]]);
+    for (let i = 1; i < pts.length; i++) {
+      const [x1, y1] = pts[i - 1], [x2, y2] = pts[i];
+      segs.push({ x: Math.min(x1, x2) - 1, y: Math.min(y1, y2) - 1, w: Math.abs(x2 - x1) + 2, h: Math.abs(y2 - y1) + 2 });
+    }
+  });
+  const out = [];
+  texts.forEach((t, i) => {
+    if (t.el.classList.contains("name")) return;
+    texts.slice(i + 1).forEach((u) => { if (hit(t.r, u.r)) out.push("text/text: " + t.s + " | " + u.s); });
+    boxes.forEach((b) => { if (hit(t.r, b.r)) out.push("text/box: " + t.s); });
+    segs.forEach((s) => { if (hit(t.r, s)) out.push("text/line: " + t.s); });
+  });
+  document.querySelectorAll("g text.name").forEach((el) => {
+    const r = rectOf(el), box = boxes.find((b) => hit(r, b.r));
+    if (box && (r.x < box.r.x + 8 || r.x + r.w > box.r.x + box.r.w - 8)) out.push("name too wide: " + el.textContent);
+  });
+  const svgEl = document.querySelector("svg"), all = svgEl.getBBox();
+  out.push("content extent: " + Math.round(all.x + all.width) + " x " + Math.round(all.y + all.height));
+  const pre = document.createElement("pre"); pre.id = "report"; pre.textContent = out.join("\n"); document.body.append(pre);
+}</script>
+</body>
+</html>

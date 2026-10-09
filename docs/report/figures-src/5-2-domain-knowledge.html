@@ -1,0 +1,49 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="fig.css"></head>
+<body><div id="fig"></div>
+<script type="module">
+import { Diagram } from "./diagram.js";
+const d = new Diagram();
+const A = 20, B = 440, C = 880;
+
+d.box("roles", { x: A, y: 20, w: 300, title: "RolesManifest", attrs: ["architects : email[]", "developers : email[]"] });
+d.box("adr", { x: B, y: 20, w: 340, title: "ADR", attrs: [
+  "id : string", "title : string", "status : AdrStatus", "context : string", "decision : string",
+  "consequences : string", "proposedBy : email", "reviewedBy : email", "reviewNote : string",
+  "supersedes : ADR id", "embedding : number[]",
+] });
+d.box("audit", { x: C, y: 20, w: 300, title: "AuditEntry", attrs: [
+  "id : string", "timestamp : date", "eventType : AuditEventType", "summary : string", "actor : email", "changedFiles : string[]",
+] });
+d.box("status", { x: C, y: 300, w: 300, title: "AdrStatus", stereo: "enumeration", attrs: [
+  "proposed (pending approval)", "accepted", "rejected", "superseded", "deprecated",
+] });
+
+d.box("history", { x: A, y: 500, w: 300, title: "ArchHistoryEntry", attrs: [
+  "id : string", "timestamp : date", "reason : string", "sections : string[]",
+] });
+d.box("effect", { x: B, y: 520, w: 340, title: "ArchEffect", stereo: "union", attrs: [
+  "add-component (component)", "add-constraint (constraint)", "replace-constraint (old, new)", "mark-implemented (name, files)",
+] });
+
+d.box("blueprint", { x: B, y: 800, w: 340, title: "ArchBlueprint", attrs: [
+  "systemOverview : string", "dataFlow : string", "constraints : string[]", "openQuestions : string[]", "lastUpdated : date",
+] });
+d.box("component", { x: C, y: 780, w: 300, title: "ArchComponent", attrs: [
+  "name : string", "responsibility : string", "technology : string", "status : planned | implemented", "files : string[]",
+] });
+
+d.edge({ from: ["roles", "right"], to: ["adr", "left", 0.16], kind: "dep", label: "decides who<br>approves", labelAt: { x: 380, y: 118 } });
+d.edge({ from: ["audit", "left", 0.43], to: ["adr", "right", 0.27], kind: "assoc", label: "about", labelAt: { x: 830, y: 92 }, fromMult: "*", toMult: "0..1" });
+d.edge({ from: ["adr", "right", 0.62], to: ["status", "left", 0.25], kind: "dep", label: "status" });
+d.edge({ from: ["adr", "left", 0.86], to: ["adr", "bottom", 0.18], via: [[390, null], [null, 470], [501.2, null]], kind: "assoc",
+         label: "supersedes", labelAt: { x: 390, y: 445 }, fromMult: "0..1", fromMultSide: "above", toMult: "0..1" });
+d.edge({ from: ["adr", "bottom", 0.5], to: ["effect", "top"], kind: "comp", label: "applied on approval", fromMult: "1", toMult: "0..1" });
+d.edge({ from: ["effect", "bottom"], to: ["blueprint", "top"], kind: "dep", label: "changes" });
+d.edge({ from: ["effect", "right", 0.6], to: ["component", "top", 0.5], kind: "dep", label: "adds / marks implemented" });
+d.edge({ from: ["history", "bottom"], to: ["blueprint", "left", 0.5], kind: "assoc", label: "earlier version of", fromMult: "*", fromMultSide: "left", toMult: "1", toMultSide: "above" });
+d.edge({ from: ["blueprint", "right", 0.5], to: ["component", "left", 0.6], kind: "comp", label: "components", labelAt: { x: 830, y: 868 }, fromMult: "1", toMult: "*" });
+
+d.render();
+</script>
+</body></html>

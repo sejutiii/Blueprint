@@ -1,0 +1,319 @@
+import { describe, it, expect } from "vitest";
+import { ArchitectureAgent, mergeConstraints } from "../src/agents/ArchitectureAgent";
+import { ComplianceAgent } from "../src/agents/ComplianceAgent";
+import { ConstraintElicitationAgent } from "../src/agents/ConstraintElicitationAgent";
+import { PreCheckAgent } from "../src/agents/PreCheckAgent";
+import { CONSTRAINT_QUESTIONS } from "../src/prompts/constraintPrompts";
+import { parseJsonObject } from "../src/util/llmJson";
+import { buildExtensionDetectionPrompt } from "../src/prompts/compliancePrompts";
+import { ArchComponent } from "../src/types";
+import { FakeLLM, blueprint, adr, diffSummary } from "./helpers";
+
+const IMPLEMENTED_API: ArchComponent = {
+  name: "ApiServer", responsibility: "Serves the REST API", status: "implemented", files: ["server.ts"],
+};
+
+describe("parseJsonObject (defensive parsing, SRS 4.3)", () => {
+  it("strips markdown fences", () => {
+    expect(parseJsonObject("```json\n{\"a\":1}\n```")).toEqual({ a: 1 });
+  });
+  it("extracts JSON surrounded by prose", () => {
+    expect(parseJsonObject("Sure! Here it is: {\"a\": {\"b\": 2}} Hope that helps.")).toEqual({ a: { b: 2 } });
+  });
+  it("returns null for non-JSON and for arrays", () => {
+    expect(parseJsonObject("no json here")).toBeNull();
+    expect(parseJsonObject("[1,2]")).toBeNull();
+  });
+});
+
+describe("ArchitectureAgent", () => {
+  it("T11: returns a blueprint with components, constraints and data flow", async () => {
+    const llm = new FakeLLM([JSON.stringify({
+      systemOverview: "Shop", dataFlow: "React -> API -> PG",
+      components: [{ name: "Frontend", responsibility: "UI", technology: "React" }, { name: "Api", responsibility: "REST" }],
+      constraints: ["PostgreSQL"], openQuestions: [],
+    })]);
+    const bp = await new ArchitectureAgent(llm.asClient()).generate("A React frontend calling a Node API backed by PostgreSQL");
+    expect(bp.components.map((c) => c.name)).toEqual(["Frontend", "Api"]);
+    expect(bp.components[1]).not.toHaveProperty("technology");
+    expect(bp.constraints).toEqual(["PostgreSQL"]);
+    expect(bp.dataFlow).toBe("React -> API -> PG");
+    expect(Date.parse(bp.lastUpdated)).not.toBeNaN();
+  });
+
+  it("T14: strips fences, and throws with the raw text when there is no JSON", async () => {
+    const fenced = new FakeLLM(["```json\n{\"systemOverview\":\"x\",\"components\":[],\"dataFlow\":\"\",\"constraints\":[],\"openQuestions\":[]}\n```"]);
+    await expect(new ArchitectureAgent(fenced.asClient()).generate("x")).resolves.toMatchObject({ systemOverview: "x" });
+
+    const garbage = new FakeLLM(["I cannot help with that"]);
+    await expect(new ArchitectureAgent(garbage.asClient()).generate("x")).rejects.toThrow(/I cannot help with that/);
+  });
+
+  it("coerces wrong field types instead of trusting them", () => {
+    const bp = ArchitectureAgent.parseResponse(JSON.stringify({ components: "oops", constraints: [1, "ok"], openQuestions: null }));
+    expect(bp.components).toEqual([]);
+    expect(bp.constraints).toEqual(["ok"]);
+    expect(bp.openQuestions).toEqual([]);
+  });
+
+  it("regeneration never drops existing constraints (mergeConstraints)", async () => {
+    const llm = new FakeLLM([JSON.stringify({ systemOverview: "s", components: [], dataFlow: "", constraints: ["Express API", "use postgresql as the primary database"], openQuestions: [] })]);
+    const next = await new ArchitectureAgent(llm.asClient()).regenerateFromCodebase(blueprint(), "snapshot");
+    expect(next.constraints).toEqual(["Use PostgreSQL as the primary database", "Express API"]);
+    expect(mergeConstraints(["A", " a ", ""], ["B", "b"])).toEqual(["A", "B"]);
+  });
+
+  it("D13: a blueprint generated from a description has only planned components", async () => {
+    const llm = new FakeLLM([JSON.stringify({
+      systemOverview: "s", dataFlow: "", constraints: [], openQuestions: [],
+      components: [{ name: "Frontend", responsibility: "UI", status: "implemented", files: ["app.tsx"] }],
+    })]);
+    const bp = await new ArchitectureAgent(llm.asClient()).generate("x");
+    expect(bp.components).toEqual([{ name: "Frontend", responsibility: "UI", status: "planned" }]);
+  });
+
+  it("D13: regeneration takes the code's statuses; a status left out keeps the current one", async () => {
+    const current = blueprint({ components: [
+      { name: "Api", responsibility: "REST", status: "implemented", files: ["api.ts"] },
+      { name: "Search", responsibility: "s", status: "planned" },
+    ] });
+    const llm = new FakeLLM([JSON.stringify({
+      systemOverview: "s", dataFlow: "", constraints: [], openQuestions: [],
+      components: [
+        { name: "Api", responsibility: "REST" },                                            // no status: stays implemented
+        { name: "Search", responsibility: "s", status: "implemented", files: ["search.ts"] }, // found in code
+        { name: "Mailer", responsibility: "m", status: "planned", files: ["ignored.ts"] },    // planned: no files
+        { name: "Queue", responsibility: "q" },                                             // new, no status: planned
+      ],
+    })]);
+    const next = await new ArchitectureAgent(llm.asClient()).regenerateFromCodebase(current, "snapshot");
+    expect(next.components.map((c) => [c.name, c.status, c.files])).toEqual([
+      ["Api", "implemented", ["api.ts"]],
+      ["Search", "implemented", ["search.ts"]],
+      ["Mailer", "planned", undefined],
+      ["Queue", "planned", undefined],
+    ]);
+  });
+});
+
+describe("ComplianceAgent", () => {
+  it("T32: parses violations with severity", () => {
+    const r = ComplianceAgent.parseComplianceResponse(JSON.stringify({
+      violation: true,
+      violations: [{ constraintId: "ADR-0001", description: "MongoDB client added", severity: "high", affectedCodeLocation: "db.ts" }],
+    }));
+    expect(r.violation).toBe(true);
+    expect(r.violations[0]).toEqual({ constraintId: "ADR-0001", description: "MongoDB client added", severity: "high", affectedCodeLocation: "db.ts" });
+  });
+
+  it("T35: unparseable output falls back to no violation", () => {
+    expect(ComplianceAgent.parseComplianceResponse("<html>error</html>")).toEqual({ violation: false, violations: [] });
+  });
+
+  it("derives `violation` from the list, and normalises bad severities", () => {
+    expect(ComplianceAgent.parseComplianceResponse(JSON.stringify({ violation: true })).violation).toBe(false);
+    const r = ComplianceAgent.parseComplianceResponse(JSON.stringify({ violations: [{ description: "x", severity: "CRITICAL" }, { description: "" }] }));
+    expect(r.violations).toHaveLength(1);
+    expect(r.violations[0].severity).toBe("medium");
+    expect(r.violation).toBe(true);
+  });
+
+  it("T37/T38 + D2: extensions are a list; known components, duplicates and extras are dropped", () => {
+    const many = Array.from({ length: 7 }, (_, i) => ({ name: `Svc${i}`, responsibility: "r", rationale: "why" }));
+    const raw = JSON.stringify({ extensions: [{ name: "ApiServer", responsibility: "dup" }, { name: "svc0", responsibility: "dup" }, ...many] });
+    const { extensions } = ComplianceAgent.parseExtensionResponse(raw, [IMPLEMENTED_API]);
+    expect(extensions.map((e) => e.name)).toEqual(["svc0", "Svc1", "Svc2", "Svc3", "Svc4"]);
+    expect(ComplianceAgent.parseExtensionResponse(JSON.stringify({ extensions: [] })))
+      .toEqual({ extensions: [], plannedImplemented: [], notReported: [] });
+  });
+
+  it("accepts the legacy single-extension shape", () => {
+    const { extensions } = ComplianceAgent.parseExtensionResponse(JSON.stringify({
+      extensionDetected: true, extension: { name: "EventBus", responsibility: "pub/sub", technology: "Kafka", rationale: "new" },
+    }));
+    expect(extensions).toEqual([{ name: "EventBus", responsibility: "pub/sub", technology: "Kafka", rationale: "new" }]);
+  });
+
+  describe("planned vs implemented components (D13)", () => {
+    const components: ArchComponent[] = [
+      { name: "Frontend", responsibility: "UI, including notifications", status: "planned" },
+      IMPLEMENTED_API,
+      { name: "Search", responsibility: "Full-text search" }, // no status (older arch.json) = planned
+    ];
+
+    it("sorts the answer into planned matches, extensions and checked files", () => {
+      const r = ComplianceAgent.parseExtensionResponse(JSON.stringify({
+        plannedImplemented: [{ component: "frontend", files: ["app.tsx"], rationale: "a React UI" }],
+        extensions: [{ name: "Notifications", responsibility: "browser notifications", rationale: "standalone", files: ["notifications.ts"] }],
+        notReported: [{ file: "hello.py", reason: "trivial script" }, { file: "app.tsx", reason: "dup of a reported file" }],
+      }), components);
+      expect(r.plannedImplemented).toEqual([{ component: "Frontend", files: ["app.tsx"], rationale: "a React UI" }]);
+      expect(r.extensions).toEqual([{ name: "Notifications", responsibility: "browser notifications", rationale: "standalone", files: ["notifications.ts"] }]);
+      expect(r.notReported).toEqual([{ file: "hello.py", reason: "trivial script" }]);
+    });
+
+    it("an 'extension' named after a planned component is that component appearing in code", () => {
+      const r = ComplianceAgent.parseExtensionResponse(JSON.stringify({
+        extensions: [{ name: "Search", responsibility: "r", rationale: "why", files: ["search.ts"] }],
+      }), components);
+      expect(r.extensions).toEqual([]);
+      expect(r.plannedImplemented).toEqual([{ component: "Search", files: ["search.ts"], rationale: "why" }]);
+    });
+
+    it("a planned match must name a component that is still planned", () => {
+      const r = ComplianceAgent.parseExtensionResponse(JSON.stringify({
+        plannedImplemented: [
+          { component: "ApiServer", files: ["x.ts"], rationale: "already implemented" },
+          { component: "Billing", files: ["b.ts"], rationale: "not in the blueprint" },
+        ],
+      }), components);
+      expect(r.plannedImplemented).toEqual([]);
+    });
+
+    it("the Pass 2 prompt tells the model each component's status and files", () => {
+      const prompt = buildExtensionDetectionPrompt(diffSummary(), blueprint({ components }));
+      expect(prompt).toContain("- Frontend [PLANNED, no code yet]: UI, including notifications");
+      expect(prompt).toContain("- ApiServer [IMPLEMENTED in server.ts]: Serves the REST API");
+      expect(prompt).toContain("- Search [PLANNED, no code yet]");
+    });
+  });
+
+  it("check() reports which ADRs were used as context", async () => {
+    const llm = new FakeLLM([JSON.stringify({ violation: false, violations: [] })]);
+    const diff = diffSummary({ changedFiles: ["a.ts"], modifiedFiles: ["a.ts"] });
+    const result = await new ComplianceAgent(llm.asClient()).check(diff, blueprint(), [adr("0001", "PG"), adr("0002", "React")]);
+    expect(result.adrsUsed).toEqual(["0001", "0002"]);
+    expect(llm.calls[0].user).toContain("[ADR-0001] PG");
+  });
+
+  it("both passes see files by kind, removals, and the diff excerpt", async () => {
+    const diff = diffSummary({
+      changedFiles: ["src/reviews.ts", "src/orders.ts", "src/payments.ts"],
+      addedFiles: ["src/reviews.ts"], modifiedFiles: ["src/orders.ts"], deletedFiles: ["src/payments.ts"],
+      removedDependencies: ['"stripe": "^14.0.0"'],
+      rawDiff: "diff --git a/src/orders.ts b/src/orders.ts\n+const db = mongo.connect(url);\n",
+    });
+    const llm = new FakeLLM([JSON.stringify({ violation: false, violations: [] }), JSON.stringify({ extensions: [] })]);
+    const agent = new ComplianceAgent(llm.asClient());
+    await agent.check(diff, blueprint(), []);
+    await agent.detectExtensions(diff, blueprint());
+    for (const call of llm.calls) {
+      expect(call.user).toContain("Added files: src/reviews.ts");
+      expect(call.user).toContain("Modified files: src/orders.ts");
+      expect(call.user).toContain("Deleted files: src/payments.ts");
+      expect(call.user).toContain('Removed dependencies: "stripe": "^14.0.0"');
+      expect(call.user).toContain("DIFF EXCERPT");
+      expect(call.user).toContain("mongo.connect(url)");
+      expect(call.user).not.toContain("New files");
+    }
+  });
+});
+
+describe("ConstraintElicitationAgent.draftDecision (Add Decision)", () => {
+  const related = [adr("0003", "Stripe is the only payment provider", "All charges go through Stripe."), adr("0005", "Use PostgreSQL")];
+  const reply = (extra: object = {}) => JSON.stringify({
+    draft: { title: "Payments via Stripe or PayPal", context: "c", decision: "d", consequences: "q" }, tentative: false, ...extra,
+  });
+
+  it("sends the description and the related decisions, and returns the suggested replacement", async () => {
+    const llm = new FakeLLM([reply({ supersedes: "0003", supersedesReason: "Allows a second provider." })]);
+    const r = await new ConstraintElicitationAgent(llm.asClient()).draftDecision("We now also accept PayPal", related);
+    expect(llm.calls[0].user).toContain("[0003] Stripe is the only payment provider");
+    expect(llm.calls[0].user).toContain('"We now also accept PayPal"');
+    expect(r).toEqual({
+      draft: { title: "Payments via Stripe or PayPal", context: "c", decision: "d", consequences: "q" },
+      tentative: false, supersedes: "0003", supersedesReason: "Allows a second provider.",
+    });
+  });
+
+  it.each([["ADR-0003"], ["3"], [3]])("normalizes the replaced id (%s)", (given) => {
+    expect(ConstraintElicitationAgent.parseDecisionDraft(reply({ supersedes: given }), "x", ["0003", "0005"]).supersedes).toBe("0003");
+  });
+
+  it("ignores an id that wasn't offered", () => {
+    expect(ConstraintElicitationAgent.parseDecisionDraft(reply({ supersedes: "0099" }), "x", ["0003"]).supersedes).toBeUndefined();
+  });
+
+  it("flags tentative descriptions but still drafts them", () => {
+    const r = ConstraintElicitationAgent.parseDecisionDraft(reply({ tentative: true }), "maybe Redis someday", []);
+    expect(r.tentative).toBe(true);
+    expect(r.draft.title).toBe("Payments via Stripe or PayPal");
+  });
+
+  it("unparseable output falls back to a draft built from the description", () => {
+    const r = ConstraintElicitationAgent.parseDecisionDraft("sorry, I can't", "Use S3 for all uploaded files", []);
+    expect(r).toEqual({ draft: { title: "Use S3 for all uploaded files", context: "", decision: "Use S3 for all uploaded files", consequences: "" }, tentative: false });
+  });
+
+  it("an empty description never reaches the LLM", async () => {
+    const llm = new FakeLLM([]);
+    await expect(new ConstraintElicitationAgent(llm.asClient()).draftDecision("  ", related)).rejects.toThrow(/Describe the decision/);
+    expect(llm.calls).toHaveLength(0);
+  });
+});
+
+describe("ConstraintElicitationAgent", () => {
+  const q = CONSTRAINT_QUESTIONS[0];
+
+  it("T16: a concrete answer yields a draft ADR (and an optional follow-up)", async () => {
+    const llm = new FakeLLM([JSON.stringify({
+      hasConstraint: true,
+      draft: { title: "Use React and PostgreSQL", context: "c", decision: "d", consequences: "q" },
+      followUp: { question: "Is PostgreSQL the only datastore?", placeholder: "e.g. Redis for cache" },
+    })]);
+    const r = await new ConstraintElicitationAgent(llm.asClient()).analyzeAnswer(q, "We are using React and PostgreSQL");
+    expect(r.hasConstraint).toBe(true);
+    expect(r.draft?.title).toBe("Use React and PostgreSQL");
+    expect(r.followUp?.question).toMatch(/only datastore/);
+  });
+
+  it("T17: a tentative answer yields no draft", async () => {
+    const llm = new FakeLLM([JSON.stringify({ hasConstraint: false })]);
+    expect(await new ConstraintElicitationAgent(llm.asClient()).analyzeAnswer(q, "We might use React")).toEqual({ hasConstraint: false });
+  });
+
+  it("T18: an empty answer short-circuits without an LLM call", async () => {
+    const llm = new FakeLLM([]);
+    expect(await new ConstraintElicitationAgent(llm.asClient()).analyzeAnswer(q, "   ")).toEqual({ hasConstraint: false });
+    expect(llm.calls).toHaveLength(0);
+  });
+
+  it("a draft missing title or decision is rejected", () => {
+    expect(ConstraintElicitationAgent.parseResponse(JSON.stringify({ hasConstraint: true, draft: { title: "", decision: "d" } })))
+      .toEqual({ hasConstraint: false });
+  });
+
+  it("a follow-up's answer is analysed with the original exchange, as one ADR, with follow-ups disabled", async () => {
+    const llm = new FakeLLM([JSON.stringify({ hasConstraint: false })]);
+    const agent = new ConstraintElicitationAgent(llm.asClient());
+    const session = agent.startSession();
+    session.recordAnswer("PostgreSQL", { hasConstraint: false, followUp: { question: "Only datastore?", placeholder: "" } });
+    const followUp = session.advance()!;
+    await agent.analyzeAnswer(followUp, "Redis for caching");
+    expect(llm.calls[0].user).toContain('Earlier answer: "PostgreSQL"');
+    expect(llm.calls[0].user).toContain("Draft ONE ADR that covers both answers");
+    expect(llm.calls[0].user).toContain("Follow-ups are disabled");
+  });
+});
+
+describe("PreCheckAgent", () => {
+  it("T45: conflicts with suggestions and a revised prompt", () => {
+    const r = PreCheckAgent.parseResponse(JSON.stringify({
+      hasConflicts: true,
+      conflicts: [{ constraintId: "ADR-0001", description: "MySQL conflicts with PostgreSQL", severity: "high", suggestion: "Use PostgreSQL" }],
+      revisedPrompt: "Add a PostgreSQL connection",
+    }));
+    expect(r.hasConflicts).toBe(true);
+    expect(r.conflicts[0].suggestion).toBe("Use PostgreSQL");
+    expect(r.revisedPrompt).toBe("Add a PostgreSQL connection");
+  });
+
+  it("T46: no conflicts -> no revised prompt even if the model sent one", () => {
+    expect(PreCheckAgent.parseResponse(JSON.stringify({ hasConflicts: false, conflicts: [], revisedPrompt: "x" })))
+      .toEqual({ hasConflicts: false, conflicts: [] });
+  });
+
+  it("unparseable output falls back to no conflicts", () => {
+    expect(PreCheckAgent.parseResponse("oops")).toEqual({ hasConflicts: false, conflicts: [] });
+  });
+});

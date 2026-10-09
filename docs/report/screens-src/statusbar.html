@@ -1,0 +1,23 @@
+<!doctype html>
+<!-- Mock-up of BluePrint's status bar item in each state (native VS Code UI), Light Modern theme. -->
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@vscode/codicons@0.0.36/dist/codicon.css">
+<style>
+  body { margin: 0; font: 12px "Segoe UI", sans-serif; color: #3b3b3b; background: #fff; width: 640px; }
+  .state { display: flex; align-items: center; gap: 14px; padding: 6px 12px; }
+  .label { width: 110px; font: 600 12.5px "Segoe UI", sans-serif; color: #3b3b3b; }
+  .bar { flex: 1; height: 22px; display: flex; align-items: center; background: #f8f8f8; border-top: 1px solid #e5e5e5; padding: 0 4px; }
+  .item { display: flex; align-items: center; gap: 4px; padding: 0 6px; height: 22px; }
+  .item .codicon { font-size: 14px; }
+  .item.warning { background: #fdd835; color: #3b3b3b; }
+  .muted { color: #717171; }
+  .tip { margin-left: 8px; color: #717171; font-style: italic; }
+  .spin { display: inline-block; }
+</style></head>
+<body><div id="fig">
+  <div class="state"><span class="label">Not initialized</span><div class="bar"><span class="item muted"><i class="codicon codicon-source-control"></i>main</span><span class="item"><i class="codicon codicon-circuit-board"></i>BluePrint: Not initialized</span><span class="tip">click: initialize</span></div></div>
+  <div class="state"><span class="label">Idle</span><div class="bar"><span class="item muted"><i class="codicon codicon-source-control"></i>main</span><span class="item"><i class="codicon codicon-circuit-board"></i>BluePrint · 1 pending</span><span class="tip">click: open the Hub</span></div></div>
+  <div class="state"><span class="label">Checking</span><div class="bar"><span class="item muted"><i class="codicon codicon-source-control"></i>main</span><span class="item"><i class="codicon codicon-sync"></i>BluePrint: Checking…</span><span class="tip">review running</span></div></div>
+  <div class="state"><span class="label">OK</span><div class="bar"><span class="item muted"><i class="codicon codicon-source-control"></i>main</span><span class="item"><i class="codicon codicon-check"></i>BluePrint: OK</span><span class="tip">returns to Idle after 5 s</span></div></div>
+  <div class="state"><span class="label">Violation</span><div class="bar"><span class="item muted"><i class="codicon codicon-source-control"></i>main</span><span class="item warning"><i class="codicon codicon-warning"></i>BluePrint: Violation</span><span class="tip">click: show the review</span></div></div>
+</div></body></html>

@@ -1,0 +1,37 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="fig.css"></head>
+<body><div id="fig"></div>
+<script type="module">
+import { Diagram } from "./diagram.js";
+const d = new Diagram();
+const state = (id, x, y, w, name, act) =>
+  d.box(id, { x, y, w, cls: "state", html: `<div class="name">${name}</div>${act ? `<div class="act">${act}</div>` : ""}` });
+
+d.box("i", { x: 372, y: 20, w: 26, cls: "init" });
+state("noinit", 40, 110, 260, "Not initialized", "status bar: click to initialize");
+state("idle", 470, 110, 270, "Idle", "status bar: BluePrint · N pending");
+state("checking", 470, 420, 270, "Checking", "do / run Pass 1 and Pass 2 in parallel");
+state("ok", 40, 420, 250, "OK", "status bar: no violations");
+state("violation", 870, 420, 310, "Violation", "click / show the open review (re-run it if the panel was closed)");
+
+d.edge({ from: ["i", "left"], to: ["noinit", "top"], kind: "trans", label: "[no arch.json]", labelAt: { x: 255, y: 33 } });
+d.edge({ from: ["i", "right"], to: ["idle", "top"], kind: "trans", label: "[initialized]", labelAt: { x: 500, y: 33 } });
+d.edge({ from: ["noinit", "right", 0.4], to: ["idle", "left", 0.4], kind: "trans", label: "ARCH.md<br>generated", labelCls: "wrap", labelAt: { x: 385, y: 180 } });
+
+d.edge({ from: ["idle", "bottom", 0.25], to: ["checking", "top", 0.25], kind: "trans",
+         label: "review requested<br>(Hub, command,<br>new file)", labelCls: "wrap", labelAt: { x: 625, y: 330 } });
+d.edge({ from: ["checking", "top", 0.9], to: ["idle", "bottom", 0.9], kind: "trans",
+         label: "nothing changed,<br>or an error", labelCls: "wrap", labelAt: { x: 810, y: 300 } });
+
+d.edge({ from: ["checking", "left", 0.3], to: ["ok", "right", 0.3], kind: "trans", label: "[no<br>violations]", labelCls: "wrap", labelAt: { x: 380, y: 410 } });
+d.edge({ from: ["ok", "right", 0.75], to: ["checking", "left", 0.75], kind: "trans", label: "review<br>run again", labelCls: "wrap", labelAt: { x: 380, y: 530 } });
+d.edge({ from: ["ok", "top", 0.75], to: ["idle", "bottom", 0.08], kind: "trans", via: [[null, 330]], label: "after 5 s", labelAt: { x: 330, y: 330 } });
+
+d.edge({ from: ["checking", "right", 0.3], to: ["violation", "left", 0.3], kind: "trans", label: "[violations<br>found]", labelCls: "wrap", labelAt: { x: 805, y: 410 } });
+d.edge({ from: ["violation", "left", 0.75], to: ["checking", "right", 0.75], kind: "trans", label: "review<br>run again", labelCls: "wrap", labelAt: { x: 805, y: 540 } });
+d.edge({ from: ["violation", "top", 0.6], to: ["idle", "right", 0.5], kind: "trans",
+         label: "every violation<br>handled in the panel", labelCls: "wrap", labelAt: { x: 1056, y: 300 } });
+
+d.render();
+</script>
+</body></html>
