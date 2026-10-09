@@ -4,7 +4,7 @@ tests/**
 vitest.config.mts
 docs/**
 src/**
-test/**
+demo/**
 .gitignore
 .gitattributes
 .eslintrc.json
