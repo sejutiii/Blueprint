@@ -61,10 +61,22 @@ export const workspace = {
     },
   },
 
-  getConfiguration() {
-    return { get: <T>(_key: string, fallback: T): T => fallback };
+  getConfiguration(section?: string) {
+    return {
+      get: <T>(key: string, fallback: T): T => {
+        const full = section ? `${section}.${key}` : key;
+        return full in configValues ? (configValues[full] as T) : fallback;
+      },
+    };
   },
 };
+
+const configValues: Record<string, unknown> = {};
+
+/** Set a setting as `getConfiguration` returns it, e.g. `__setConfig("blueprint.retrieval.topK", 2)`; undefined clears it. */
+export function __setConfig(key: string, value: unknown): void {
+  if (value === undefined) { delete configValues[key]; } else { configValues[key] = value; }
+}
 
 /** Point `workspace.workspaceFolders` at a directory (tests call this in beforeEach). */
 export function __setWorkspaceRoot(dir: string | null): void {

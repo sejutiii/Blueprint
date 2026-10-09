@@ -36,7 +36,7 @@ npm run typecheck   # extension + test sources
 | T23 | Signal list truncation | Auto | `diff.test.ts` |
 | T24 | Large diff truncation | Auto | `diff.test.ts` — now a 6,000-char excerpt shared by both passes; every file stays named, long files are cut with a note |
 | T25 | No git repo / no diff | Auto + Manual | `diff.test.ts`; "No uncommitted changes" screen is manual |
-| T26 | Short-circuit when ADRs ≤ top-K | Auto | `retrieval.test.ts` |
+| T26 | Short-circuit when ADRs ≤ top-K | Auto | `retrieval.test.ts`. Top-K is the `blueprint.retrieval.topK` setting (default 5, 1–20, E6); `decisions.test.ts` checks pre-check, Add Decision and Pass 1 use it |
 | T27 | Top-K ranking | Auto | `retrieval.test.ts` |
 | T28 | Component-name boost | Auto | `retrieval.test.ts` |
 | T29 | Embedding cache reuse | Auto | `retrieval.test.ts` |
@@ -133,6 +133,7 @@ Run with F5, then open one of the projects in `test/`. A free Gemini or Groq key
 **Pre-check**
 - [ ] Prompt that conflicts with a constraint: concerns + suggested revision; "Use this prompt" fills the box (T45).
 - [ ] "Copy prompt with context" → paste: prompt + selected ADRs + constraints.
+- [ ] Settings → `blueprint.retrieval.topK` = 2 (project with more than 2 accepted ADRs): the next pre-check lists at most 2 ADRs, with no reload. Set it back to 5.
 - [ ] Ctrl+Enter checks (T48); "Revise prompt" keeps text, "Check another prompt" clears it (T49).
 
 **Viewers**

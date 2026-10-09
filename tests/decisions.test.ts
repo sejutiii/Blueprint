@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
+import { execSync } from "child_process";
 import { roleFor, parseRolesManifest, parseEmailList, buildRolesManifest, rolesConfigured } from "../src/access/roles";
 import { Orchestrator } from "../src/orchestrator/Orchestrator";
 import { AccessControl, Actor } from "../src/access/AccessControl";
@@ -8,12 +9,16 @@ import { AdrStore } from "../src/storage/AdrStore";
 import { FileStore } from "../src/storage/FileStore";
 import { AuditLog } from "../src/storage/AuditLog";
 import { DecisionService } from "../src/services/DecisionService";
-import { RetrievalAgent } from "../src/agents/RetrievalAgent";
+import { RetrievalAgent, clampTopK, DEFAULT_TOP_K, MAX_TOP_K } from "../src/agents/RetrievalAgent";
+import { ComplianceAgent } from "../src/agents/ComplianceAgent";
+import { PreCheckAgent } from "../src/agents/PreCheckAgent";
+import { ConstraintElicitationAgent } from "../src/agents/ConstraintElicitationAgent";
+import { LLMClient } from "../src/llm/LLMClient";
 import { EmbeddingService } from "../src/embeddings/EmbeddingService";
 import { adrFilename } from "../src/prompts/adrPrompts";
 import { ElicitationSession } from "../src/agents/ElicitationSession";
 import { CONSTRAINT_QUESTIONS } from "../src/prompts/constraintPrompts";
-import { Uri, __setWorkspaceRoot } from "./mocks/vscode";
+import { Uri, __setWorkspaceRoot, __setConfig } from "./mocks/vscode";
 import { blueprint, tempDir, removeDir } from "./helpers";
 
 describe("roles (SRS 3.2.5 role lookup)", () => {
@@ -262,6 +267,74 @@ describe("Add Decision — replacing an existing decision", () => {
     await orchestrator.saveDecision(draft("Payments go through Stripe or PayPal"), old.id);
     const used = await new RetrievalAgent().retrieve("payments", await store().getAll(), blueprint());
     expect(used.map((a) => a.id)).not.toContain(old.id);
+  });
+});
+
+describe("E6 — top-K setting (blueprint.retrieval.topK)", () => {
+  let dir: string;
+  const orchestrator = new Orchestrator({} as never, { onState: () => {}, onDataChanged: () => {} });
+  const titles = ["PostgreSQL only", "React frontend", "Stripe payments", "Two approvals",
+                  "Deploy to ECS", "JSON logs", "Monorepo", "REST over HTTP"];
+
+  beforeEach(async () => {
+    dir = tempDir();
+    __setWorkspaceRoot(dir);
+    vi.spyOn(AccessControl.prototype, "resolveIdentity").mockResolvedValue("lead@x.io");
+    vi.spyOn(EmbeddingService.prototype, "embed").mockResolvedValue(null);
+    vi.spyOn(LLMClient, "fromSecrets").mockResolvedValue({} as LLMClient);
+    await new FileStore(Uri.file(dir) as never).writeArchBlueprint(blueprint(), "Shop");
+    for (const t of titles) {
+      await orchestrator.saveDecision({ title: t, context: "c", decision: `Decision: ${t}`, consequences: "q" });
+    }
+  });
+  afterEach(() => {
+    __setConfig("blueprint.retrieval.topK", undefined);
+    vi.restoreAllMocks();
+    __setWorkspaceRoot(null);
+    removeDir(dir);
+  });
+
+  const preCheckAdrCount = async (): Promise<number> => {
+    const check = vi.spyOn(PreCheckAgent.prototype, "check").mockResolvedValue({ hasConflicts: false, conflicts: [] });
+    const { adrs } = await orchestrator.preCheck("add a payment provider and a new database");
+    expect(adrs).toHaveLength(check.mock.calls[0][2].length);
+    return adrs.length;
+  };
+
+  it("pre-check uses 5 ADRs by default", async () => {
+    expect(await preCheckAdrCount()).toBe(DEFAULT_TOP_K);
+  });
+
+  it("pre-check uses the configured number", async () => {
+    __setConfig("blueprint.retrieval.topK", 2);
+    expect(await preCheckAdrCount()).toBe(2);
+  });
+
+  it("hand-edited values are clamped to 1–20 or fall back to the default", () => {
+    expect([0, -3, 3.7, 500, NaN, "8", null, undefined].map(clampTopK))
+      .toEqual([1, 1, 4, MAX_TOP_K, DEFAULT_TOP_K, DEFAULT_TOP_K, DEFAULT_TOP_K, DEFAULT_TOP_K]);
+  });
+
+  it("Add Decision offers the model top-K ADRs to replace, and the developer all of them", async () => {
+    __setConfig("blueprint.retrieval.topK", 3);
+    const draft = vi.spyOn(ConstraintElicitationAgent.prototype, "draftDecision")
+      .mockResolvedValue({ draft: { title: "t", context: "c", decision: "d", consequences: "q" }, tentative: false });
+    const { candidates } = await orchestrator.draftDecision("Payments go through Stripe or PayPal");
+    expect(draft.mock.calls[0][1]).toHaveLength(3);
+    expect(candidates).toHaveLength(titles.length);
+  });
+
+  it("compliance Pass 1 checks the change against top-K ADRs", async () => {
+    __setConfig("blueprint.retrieval.topK", 4);
+    execSync("git init -q", { cwd: dir, stdio: "pipe" });
+    fs.writeFileSync(path.join(dir, "payments.ts"), "export function charge() {}\n");
+    const check = vi.spyOn(ComplianceAgent.prototype, "check")
+      .mockResolvedValue({ violation: false, violations: [], adrsUsed: [] });
+    vi.spyOn(ComplianceAgent.prototype, "detectExtensions")
+      .mockResolvedValue({ extensions: [], plannedImplemented: [], notReported: [] });
+    const outcome = await orchestrator.review("full");
+    expect(outcome.kind).toBe("result");
+    expect(check.mock.calls[0][2]).toHaveLength(4);
   });
 });
 

@@ -19,6 +19,16 @@ const COMPONENT_BOOST = 0.15;
 // stayed <= ~0.08. Lexical-only scoring (model unavailable) gets its own bar.
 export const RELEVANCE_THRESHOLD = { blended: 0.10, lexical: 0.08 } as const;
 
+// How many accepted ADRs go to the model as context: the `blueprint.retrieval.topK` setting.
+export const DEFAULT_TOP_K = 5;
+export const MAX_TOP_K = 20;
+
+/** The top-K setting as a whole number in 1–MAX_TOP_K; a hand-edited value that isn't a number gets the default. */
+export function clampTopK(raw: unknown): number {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) { return DEFAULT_TOP_K; }
+  return Math.min(MAX_TOP_K, Math.max(1, Math.round(raw)));
+}
+
 export interface ScoredAdr {
   adr: ADR;
   score: number;
@@ -41,7 +51,7 @@ export class RetrievalAgent {
     query: string,
     adrs: ADR[],
     blueprint: ArchBlueprint | null,
-    topK = 5,
+    topK = DEFAULT_TOP_K,
     adrStore?: AdrStore | null
   ): Promise<ADR[]> {
     // Only binding decisions count as context — pending, rejected and retired ADRs must not
@@ -63,7 +73,7 @@ export class RetrievalAgent {
     query: string,
     adrs: ADR[],
     blueprint: ArchBlueprint | null,
-    topK = 5,
+    topK = DEFAULT_TOP_K,
     adrStore?: AdrStore | null
   ): Promise<{ results: ScoredAdr[]; semantic: boolean }> {
     const accepted = adrs.filter((a) => a.status === "accepted");

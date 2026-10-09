@@ -1,17 +1,18 @@
 # BluePrint — Completion Tasks
 
-## ▶ Resume here (updated 2026-10-08)
+## ▶ Resume here (updated 2026-10-09)
 
-**State.** All work is committed on branch `complete-srs` (`main` is untouched); `test/` is git-ignored. `npm test` (169 tests), `npm run typecheck` and `npm run lint` pass; `npm run build` and `npm run package` work. Phases 1–4 and 3b are done except the items below.
+**State.** All work is committed on branch `complete-srs` (`main` is untouched); `test/` is git-ignored. `npm test` (174 tests), `npm run typecheck` and `npm run lint` pass; `npm run build` and `npm run package` work. Phases 1–4 and 3b are done except the items below.
 
 **Next steps, in order**
 1. ~~UI fixes~~ — Phase 3b is complete (U1–U17, 2026-10-08).
 2. **Finish the manual checklist** ← *next* in [docs/TESTING.md](docs/TESTING.md) (F5, projects in `test/`). *Partly run* (paused 2026-10-08): the developer tried reviews, the wizard and extension detection, which found M3–M5 (all fixed); no checklist items are ticked yet. Restart the Extension Development Host first so it runs the latest build.
-3. **E6** remaining setting: top-K — present a plan first.
+3. ~~**E6** top-K~~ — done 2026-10-09.
 4. **E5** non-git diff fallback — present a plan first. (Since M3 the panel already says "not a git repository / run git init".)
-5. **P1** README / LICENSE / `repository` / icon — **open question: which license?** (MIT suggested). Then drop the `--allow-missing-repository --skip-license` flags in `scripts/package.js` (marked TODO). Repeat the roles honour-system note in the README (U15).
-6. **P2** update the SRS where behaviour deliberately changed (D1–D13 below; T34 and T49 in particular) and write the project's own ARCH.md (see the `.gitignore` note under P3).
-7. *Optional:* let the developer rename a detected extension before registering it (the model's names vary run to run); **F1** under Future extensions.
+5. **P1** README / CHANGELOG / `repository` / icon — **no license for now** (D14): no LICENSE file, no `license` field, no mention in the README, so `--skip-license` stays in `scripts/package.js`; `--allow-missing-repository` goes once `repository` is set. Repeat the roles honour-system note in the README (U15).
+6. **Publish to the VS Code Marketplace** (D14) after the manual checklist passes: per-platform `vsce publish --target`. Needs the developer's publisher account and token.
+7. **P2** update the SRS where behaviour deliberately changed (D1–D13 below; T34 and T49 in particular) and write the project's own ARCH.md (see the `.gitignore` note under P3).
+8. *Optional:* let the developer rename a detected extension before registering it (the model's names vary run to run); **F1** under Future extensions.
 
 **Known unverified / caveats**
 - Linux and macOS VSIXs build but were never run; only Windows x64 embeddings were verified (from the unpacked VSIX).
@@ -42,6 +43,7 @@ Legend: `[ ]` todo · `[x]` done · **SRS** = section/test-case it satisfies.
 - **D11 — Add Decision** (2026-10-06): free-text decision → editable ADR draft; it may replace an existing accepted ADR (suggested by the model, chosen by the developer), which is marked superseded and has its ARCH.md constraint swapped on acceptance. Vague text is still drafted, with a warning. The wizard's questions can be reopened on their own.
 - **D12 — UI follow-ups (2026-10-08, recommendations accepted):** Hub becomes a state-aware dashboard (U7); the sidebar Audit Trail shows recent audit-log entries (U8); new "Change LLM Provider / API Key" command (U9); Search and Filter ADRs both stay (U10); Revert ARCH.md is Architect-only like Regenerate (U16).
 - **D13 — Planned vs implemented components** (2026-10-08). Every component has a status: **Planned** (described, no code yet) or **Implemented** (with its files); ARCH.md shows it in a Status column (older tables get the column on first change, existing rows marked Planned). Initialize marks everything Planned; Regenerate takes statuses from the code. Pass 2 sorts new code into three groups: a planned component now in code → marked Implemented, **no ADR** (it was already decided; open to every role, revertible, audited as `component_implemented`); something neither planned nor implemented → **extension**, one ADR + ARCH.md row marked Implemented; anything else → "checked, not new" with a reason, shown in the panel with "Register as new component anyway". Code counts as a planned component only if it *is* that component as a whole; one capability that a broader planned component merely mentions, built on its own, is an extension (when unsure, extension). The panel lets the developer overrule each verdict.
+- **D14 — Release** (2026-10-09): deploy = publish to the VS Code Marketplace, after the manual checklist. No license for now: no LICENSE file, no `license` field, not mentioned in the README.
 - **D4 — Orchestrator split kept** (`src/orchestrator/Orchestrator.ts`): pipelines live there, `extension.ts` is UI only.
 
 ## Phase 1 — Bugs & correctness (fix before adding features)
@@ -87,7 +89,7 @@ Legend: `[ ]` todo · `[x]` done · **SRS** = section/test-case it satisfies.
   - **Limits:** skip binary files and files over ~256 KB, cap at 4,000 files, warn above ~20 MB, and list skipped files in the review. Hub and no-diff wording adapted for non-git folders.
   - **Open choices for the developer:** when the baseline advances (explicit recommended), where it is stored (workspace storage recommended), and jsdiff vs a hand-written diff.
   - About a day of work, including tests on a temporary non-git folder.
-- [ ] **E6 Settings**: `contributes.configuration` for provider/model override, top-K, auto-review on new file. *Done so far:* auto-review on new file; per-provider model override `blueprint.model.<provider>` (2026-10-06). *Left:* top-K. ~~Light/heavy tier~~ dropped (D10).
+- [x] **E6 Settings**: `contributes.configuration` for provider/model override, top-K, auto-review on new file. Auto-review on new file; per-provider model override `blueprint.model.<provider>` (2026-10-06); `blueprint.retrieval.topK` (2026-10-09: default 5, 1–20, read per request; one value for compliance Pass 1, pre-check and the ADRs Add Decision offers as replaceable; hand-edited bad values clamped or defaulted). ~~Light/heavy tier~~ dropped (D10).
 - [x] **A1 Add Decision** (D11): `BluePrint: Add Decision (ADR)` (sidebar +, Hub card, palette) and `BluePrint: Answer Constraint Questions` (wizard questions without regenerating ARCH.md). New `replace-constraint` ARCH.md effect; ADRs record `supersedes`/`supersededBy`; audit event `adr_superseded`.
 - [x] **M2 Diff summary** (2026-10-06): files split into added / modified / renamed / deleted (deleted files and pure renames were previously dropped, and every changed file was labelled "New files"); removed dependencies reported; both compliance passes get the same change description plus a 6,000-char diff excerpt (Pass 1 previously saw no diff text at all) that names every file and cuts long ones fairly. Pass 1's prompt now says removals can violate decisions. *Not done:* removed imports/declarations (needs the pre-change file).
 - [x] **M3 Review saw nothing in a nested folder** (2026-10-08, found in manual testing): `test4`/`test5` had no `.git` of their own, so git used the enclosing BluePrint repo, which ignores `test/` since P3 → empty diff → "No uncommitted changes". Underneath: a workspace inside a larger repo was diffed against the *whole* outer repo, with paths relative to its root. Fixed: `git diff --relative`; an empty diff now says why (not a git repo / ignored by the repo at X / really clean). `git init` run in test4 and test5 (nothing committed). Also fixed: adding or deleting an empty file was dropped from the review (git prints no ---/+++ lines for it).

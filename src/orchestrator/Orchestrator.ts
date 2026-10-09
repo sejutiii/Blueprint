@@ -9,7 +9,7 @@ import { ArchitectureAgent } from "../agents/ArchitectureAgent";
 import { ConstraintElicitationAgent, DecisionDraftResult } from "../agents/ConstraintElicitationAgent";
 import { ComplianceAgent } from "../agents/ComplianceAgent";
 import { DiffSummarizer, NoDiffReason } from "../agents/DiffSummarizer";
-import { RetrievalAgent } from "../agents/RetrievalAgent";
+import { RetrievalAgent, DEFAULT_TOP_K, clampTopK } from "../agents/RetrievalAgent";
 import { PreCheckAgent } from "../agents/PreCheckAgent";
 import { PreCheckResult, buildPromptWithContext } from "../prompts/preCheckPrompts";
 import { ConstraintDraft } from "../prompts/constraintPrompts";
@@ -67,7 +67,6 @@ export interface OrchestratorHooks {
   onDataChanged(): void;
 }
 
-const TOP_K = 5;
 const REVERT_ACTION = "revert ARCH.md, because it rewrites the whole document";
 
 /**
@@ -115,6 +114,11 @@ export class Orchestrator {
       throw new BlueprintError("No LLM provider configured. Run BluePrint: Initialize Project first.");
     }
     return llm;
+  }
+
+  /** How many accepted ADRs go to the model as context; read per request so a settings change applies at once. */
+  private topK(): number {
+    return clampTopK(vscode.workspace.getConfiguration("blueprint").get<unknown>("retrieval.topK", DEFAULT_TOP_K));
   }
 
   private async requireInitialized() {
@@ -177,7 +181,7 @@ export class Orchestrator {
     const accepted = (await adrStore.getAll()).filter((a) => a.status === "accepted");
     const { results } = await new RetrievalAgent().retrieveScored(description, accepted, blueprint, accepted.length, adrStore);
     const ranked  = results.length ? results.map((r) => r.adr) : accepted;
-    const related = ranked.slice(0, TOP_K);
+    const related = ranked.slice(0, this.topK());
 
     const result = await new ConstraintElicitationAgent(llm).draftDecision(description, related);
     return {
@@ -216,7 +220,7 @@ export class Orchestrator {
     const llm = await this.requireLlm();
 
     const allAdrs = await adrStore.getAll();
-    const { results: scored } = await new RetrievalAgent().retrieveScored(promptText, allAdrs, blueprint, TOP_K, adrStore);
+    const { results: scored } = await new RetrievalAgent().retrieveScored(promptText, allAdrs, blueprint, this.topK(), adrStore);
 
     // The agent sees the full top-K (recall matters for spotting conflicts); the developer is
     // shown which of those actually cleared the relevance bar, plus any the agent cited.
@@ -268,7 +272,7 @@ export class Orchestrator {
       const runPass1 = async (): Promise<Pick<ComplianceResult, "violation" | "violations" | "adrsUsed">> => {
         const allAdrs      = await ws.adrStore.getAll();
         const query        = RetrievalAgent.queryFromDiff(diffSummary);
-        const relevantAdrs = await new RetrievalAgent().retrieve(query, allAdrs, ws.blueprint, TOP_K, ws.adrStore);
+        const relevantAdrs = await new RetrievalAgent().retrieve(query, allAdrs, ws.blueprint, this.topK(), ws.adrStore);
         return agent.check(diffSummary, ws.blueprint, relevantAdrs);
       };
 
