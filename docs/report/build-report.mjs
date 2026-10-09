@@ -1,4 +1,5 @@
-// Builds the report sections (5 Component-level design, 6 Interface design, 7 Testing) as a .docx
+// Builds the report sections (Abstract, 5 Component-level design, 6 Interface design, 7 Testing,
+// 8 User manual, 9 Conclusion) as a .docx
 // that opens in Google Docs. Figures come from figures/ (see render.mjs).
 // Usage: REPORT_TOOLS=<node_modules with docx> node build-report.mjs
 import { readFileSync, writeFileSync } from "node:fs";
@@ -8,6 +9,9 @@ import { fileURLToPath } from "node:url";
 import { section5 } from "./content/section5.mjs";
 import { section6 } from "./content/section6.mjs";
 import { section7 } from "./content/section7.mjs";
+import { section8 } from "./content/section8.mjs";
+import { section9 } from "./content/section9.mjs";
+import { abstract } from "./content/abstract.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const docx = createRequire(join(process.env.REPORT_TOOLS ?? ".", "noop.js"))("docx");
@@ -21,6 +25,7 @@ const PAGE = { width: 11906, height: 16838, margin: 1440 };
 const TEXT_W = PAGE.width - 2 * PAGE.margin;
 const FONT = "Arial";
 const IMG_W_PX = 600; // ~6.25 in at 96 dpi
+let stepList = 1; // numbering instance of the current numbered list; `restart` starts a new one
 
 // ── Building blocks (used by the content modules) ────────────────────────────
 
@@ -32,9 +37,9 @@ function runs(text, base = {}) {
   for (const m of text.matchAll(re)) {
     if (m.index > last) { out.push(new TextRun({ text: text.slice(last, m.index), ...base })); }
     const t = m[0];
-    if (t.startsWith("**")) { out.push(new TextRun({ text: t.slice(2, -2), bold: true, ...base })); }
+    if (t.startsWith("**")) { out.push(new TextRun({ text: t.slice(2, -2), ...base, bold: true })); }
     else if (t.startsWith("`")) { out.push(new TextRun({ text: t.slice(1, -1), font: "Consolas", size: (base.size ?? 22) - 2, ...base, ...{ font: "Consolas" } })); }
-    else { out.push(new TextRun({ text: t.slice(1, -1), italics: true, ...base })); }
+    else { out.push(new TextRun({ text: t.slice(1, -1), ...base, italics: true })); }
     last = m.index + t.length;
   }
   if (last < text.length) { out.push(new TextRun({ text: text.slice(last), ...base })); }
@@ -47,6 +52,11 @@ const B = {
   h3: (text) => new Paragraph({ heading: HeadingLevel.HEADING_3, children: [new TextRun(text)] }),
   p: (text) => new Paragraph({ spacing: { after: 140, line: 300 }, alignment: AlignmentType.JUSTIFIED, children: runs(text) }),
   bullet: (text, level = 0) => new Paragraph({ numbering: { reference: "bullets", level }, spacing: { after: 60, line: 288 }, children: runs(text) }),
+  /** One item of a numbered list; `restart: true` starts a new list at 1. */
+  step(text, { restart = false } = {}) {
+    if (restart) { stepList++; }
+    return new Paragraph({ numbering: { reference: "steps", level: 0, instance: stepList }, spacing: { after: 80, line: 288 }, children: runs(text) });
+  },
   pageBreak: () => new Paragraph({ children: [new PageBreak()] }),
 
   /** A full-width figure; `widthIn` narrows it (screenshots of narrow panels). */
@@ -142,11 +152,15 @@ function captionPara(caption) {
 
 // ── Document ──────────────────────────────────────────────────────────────────
 
-const body = [...section5(B), B.pageBreak(), ...section6(B), B.pageBreak(), ...section7(B)];
+const body = [
+  ...abstract(B), B.pageBreak(),
+  ...section5(B), B.pageBreak(), ...section6(B), B.pageBreak(), ...section7(B), B.pageBreak(),
+  ...section8(B), B.pageBreak(), ...section9(B),
+];
 
 const doc = new Document({
   creator: "BluePrint project",
-  title: "BluePrint report: sections 5-7",
+  title: "BluePrint report: abstract and sections 5-9",
   styles: {
     default: { document: { run: { font: FONT, size: 22 } } },
     paragraphStyles: [
@@ -163,6 +177,9 @@ const doc = new Document({
       { reference: "bullets", levels: [
         { level: 0, format: LevelFormat.BULLET, text: "•", alignment: AlignmentType.LEFT, style: { paragraph: { indent: { left: 720, hanging: 360 } } } },
         { level: 1, format: LevelFormat.BULLET, text: "◦", alignment: AlignmentType.LEFT, style: { paragraph: { indent: { left: 1440, hanging: 360 } } } },
+      ] },
+      { reference: "steps", levels: [
+        { level: 0, format: LevelFormat.DECIMAL, text: "%1.", alignment: AlignmentType.LEFT, style: { paragraph: { indent: { left: 720, hanging: 360 } } } },
       ] },
       { reference: "cellbullets", levels: [
         { level: 0, format: LevelFormat.BULLET, text: "•", alignment: AlignmentType.LEFT, style: { paragraph: { indent: { left: 260, hanging: 200 } } } },

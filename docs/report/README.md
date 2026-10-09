@@ -1,6 +1,6 @@
-# Report sections 5–7
+# Report: abstract and sections 5–9
 
-Sources for the final report's Component-level design, Interface design and Testing sections.
+Sources for the final report's Abstract, Component-level design, Interface design, Testing, User manual and Conclusion sections.
 
 - `figures-src/` — one HTML page per figure (hand-placed diagrams use `diagram.js`; UML state/sequence
   diagrams that Mermaid lays out well use `mermaid-page.js`, loaded from jsDelivr, so rendering needs internet).
