@@ -1,6 +1,6 @@
 # BluePrint — Test Plan Status
 
-How each test case from the SRS (§5, T1–T53) is covered. **Auto** means it runs in `npm test` (vitest, plain Node, a stand-in `vscode` module backed by real temp folders). **Manual** means it needs the VS Code UI or a real LLM; run those in the Extension Development Host (F5) using the projects in `test/`.
+How each test case from the SRS (§5, T1–T53) is covered. **Auto** means it runs in `npm test` (vitest, plain Node, a stand-in `vscode` module backed by real temp folders). **Manual** means it needs the VS Code UI or a real LLM; run those in the Extension Development Host (F5) using the projects in `demo/`.
 
 ```
 npm test            # 104 unit tests, ~3 s
@@ -82,7 +82,7 @@ npm run typecheck   # extension + test sources
 
 ## Manual checklist (Extension Development Host)
 
-Run with F5, then open one of the projects in `test/`. A free Gemini or Groq key is enough.
+Run with F5, then open one of the projects in `demo/`. A free Gemini or Groq key is enough.
 
 **Setup**
 - [ ] A fresh folder: status bar shows "BluePrint: Not initialized"; the sidebar views are hidden (T1, T2). No BluePrint button in the editor tab bar.
